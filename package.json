@@ -43,6 +43,11 @@
     "configuration": {
       "title": "Go Pretty Preview",
       "properties": {
+        "goPreview.openByDefault": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically open the Go preview panel when a Go file is activated"
+        },
         "goPreview.rules.inlineOneLineIf": {
           "type": "boolean",
           "default": true,

@@ -5,6 +5,8 @@ interface ParsedBranch {
   bodyLines: string[];
   canCollapse: boolean;
   singleStmt: string; // populated only when canCollapse
+  headerSourceLine: number;
+  closingSourceLine: number;
 }
 
 /**
@@ -33,31 +35,34 @@ export class InlineOneLineIfTransformer implements Transformer {
     const lines = source.split('\n');
     const resultLines: string[] = [];
     const collapsedLineIndices = new Set<number>();
+    const lineMap: number[] = [];
     let i = 0;
 
     while (i < lines.length) {
       if (/^(\s*)if\s+.+\{$/.test(lines[i])) {
         const result = this.tryTransformChain(lines, i);
         if (result) {
-          for (const { text, collapsed } of result.outputLines) {
+          for (const { text, collapsed, sourceLine } of result.outputLines) {
             if (collapsed) collapsedLineIndices.add(resultLines.length);
+            lineMap.push(sourceLine);
             resultLines.push(text);
           }
           i = result.endIdx + 1;
           continue;
         }
       }
+      lineMap.push(i);
       resultLines.push(lines[i]);
       i++;
     }
 
-    return { code: resultLines.join('\n'), collapsedLineIndices };
+    return { code: resultLines.join('\n'), collapsedLineIndices, lineMap };
   }
 
   private tryTransformChain(
     lines: string[],
     startIdx: number
-  ): { outputLines: Array<{ text: string; collapsed: boolean }>; endIdx: number } | null {
+  ): { outputLines: Array<{ text: string; collapsed: boolean; sourceLine: number }>; endIdx: number } | null {
     const parsed = this.parseChain(lines, startIdx);
     if (!parsed) return null;
 
@@ -70,20 +75,20 @@ export class InlineOneLineIfTransformer implements Transformer {
       const b = branches[0];
       const text = `${baseIndent}${b.header} ${b.singleStmt}`;
       if (text.length > 120) return null;
-      return { outputLines: [{ text, collapsed: true }], endIdx };
+      return { outputLines: [{ text, collapsed: true, sourceLine: startIdx }], endIdx };
     }
 
     // Multi-branch → collapse qualifying branches individually
-    const outputLines: Array<{ text: string; collapsed: boolean }> = [];
+    const outputLines: Array<{ text: string; collapsed: boolean; sourceLine: number }> = [];
     for (const branch of branches) {
       if (branch.canCollapse) {
-        outputLines.push({ text: `${baseIndent}${branch.header} ${branch.singleStmt}`, collapsed: true });
+        outputLines.push({ text: `${baseIndent}${branch.header} ${branch.singleStmt}`, collapsed: true, sourceLine: branch.headerSourceLine });
       } else {
-        outputLines.push({ text: `${baseIndent}${branch.header} {`, collapsed: false });
-        for (const bodyLine of branch.bodyLines) {
-          outputLines.push({ text: bodyLine, collapsed: false });
+        outputLines.push({ text: `${baseIndent}${branch.header} {`, collapsed: false, sourceLine: branch.headerSourceLine });
+        for (let k = 0; k < branch.bodyLines.length; k++) {
+          outputLines.push({ text: branch.bodyLines[k], collapsed: false, sourceLine: branch.headerSourceLine + 1 + k });
         }
-        outputLines.push({ text: `${baseIndent}}`, collapsed: false });
+        outputLines.push({ text: `${baseIndent}}`, collapsed: false, sourceLine: branch.closingSourceLine });
       }
     }
 
@@ -103,6 +108,7 @@ export class InlineOneLineIfTransformer implements Transformer {
       const line = lines[i];
       if (line === undefined) return null;
       const trimmed = line.trim();
+      const headerSourceLine = i;
 
       let headerText: string;
 
@@ -141,7 +147,7 @@ export class InlineOneLineIfTransformer implements Transformer {
       const singleStmt = bodyLines.length === 1 ? bodyLines[0].trim() : '';
       const canCollapse = bodyLines.length === 1 && singleStmt.length > 0;
 
-      branches.push({ header: headerText, bodyLines, canCollapse, singleStmt });
+      branches.push({ header: headerText, bodyLines, canCollapse, singleStmt, headerSourceLine, closingSourceLine: j });
 
       if (closingTrimmed === '}') {
         return { branches, endIdx: j, baseIndent };

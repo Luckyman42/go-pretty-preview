@@ -30,6 +30,10 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
 
+    vscode.window.onDidChangeActiveTextEditor(editor => {
+      provider.handleActiveEditorChange(editor);
+    }),
+
     { dispose: () => provider.dispose() }
   );
 }

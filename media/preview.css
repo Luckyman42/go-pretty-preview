@@ -1,5 +1,6 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+
 body {
   background-color: var(--vscode-editor-background, #1e1e1e);
   font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
@@ -22,4 +23,56 @@ body {
   font-family: inherit;
   font-size: inherit;
   background: transparent;
+}
+
+/* Diagnostics */
+#preview-container .diag-error {
+  text-decoration: underline wavy var(--vscode-editorError-foreground, #f44747);
+}
+#preview-container .diag-warning {
+  text-decoration: underline wavy var(--vscode-editorWarning-foreground, #cca700);
+}
+#preview-container .diag-info {
+  text-decoration: underline wavy var(--vscode-editorInfo-foreground, #75beff);
+}
+
+/* Navigation cursor hint */
+#preview-container .line {
+  cursor: text;
+}
+#preview-container .line:hover {
+  background-color: var(--vscode-editor-hoverHighlightBackground, rgba(173,214,255,0.04));
+}
+
+/* Ctrl+click: show clickable cursor and underline when Ctrl/Cmd is held */
+#preview-container.ctrl-held span[style]:hover {
+  cursor: pointer !important;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Hover tooltip */
+#hover-tooltip {
+  background: var(--vscode-editorHoverWidget-background, #252526);
+  border: 1px solid var(--vscode-editorHoverWidget-border, #454545);
+  color: var(--vscode-editorHoverWidget-foreground, #d4d4d4);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--vscode-editor-font-size, 13px);
+  line-height: 1.5;
+}
+#hover-tooltip pre,
+#hover-tooltip code {
+  font-family: inherit;
+  font-size: inherit;
+  background: var(--vscode-textCodeBlock-background, #0a0a0a40);
+  border-radius: 3px;
+  padding: 0 3px;
+}
+#hover-tooltip p {
+  margin: 4px 0;
+}
+#hover-tooltip hr {
+  border: none;
+  border-top: 1px solid var(--vscode-editorHoverWidget-border, #454545);
+  margin: 6px 0;
 }

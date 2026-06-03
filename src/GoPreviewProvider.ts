@@ -23,17 +23,19 @@ function getHighlighter(): Promise<Highlighter> {
 }
 
 export class GoPreviewProvider {
-  private readonly panels = new Map<string, vscode.WebviewPanel>();
+  private panel: vscode.WebviewPanel | undefined;
+  private currentDocUri: string | undefined;
+  private currentLineMap: number[] = [];
+  private diagnosticsDisposable: vscode.Disposable | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     getHighlighter().catch(() => {});
   }
 
   open(document: vscode.TextDocument): void {
-    const key = document.uri.toString();
-    const existing = this.panels.get(key);
-    if (existing) {
-      existing.reveal(vscode.ViewColumn.Beside);
+    if (this.panel) {
+      this.panel.reveal(vscode.ViewColumn.Beside);
+      this.updatePanel(document);
       return;
     }
 
@@ -50,37 +52,176 @@ export class GoPreviewProvider {
     );
 
     panel.webview.html = this.buildShell(panel.webview);
-    this.pushUpdate(panel, document);
+    this.panel = panel;
+    this.currentDocUri = document.uri.toString();
 
-    panel.onDidDispose(() => this.panels.delete(key));
-    this.panels.set(key, panel);
+    panel.webview.onDidReceiveMessage(msg => this.handleWebviewMessage(msg));
+
+    panel.onDidDispose(() => {
+      this.panel = undefined;
+      this.currentDocUri = undefined;
+      this.currentLineMap = [];
+      this.diagnosticsDisposable?.dispose();
+      this.diagnosticsDisposable = undefined;
+    });
+
+    this.setupDiagnosticsListener();
+    this.pushUpdate(panel, document);
   }
 
   handleDocumentChange(event: vscode.TextDocumentChangeEvent): void {
-    const panel = this.panels.get(event.document.uri.toString());
-    if (panel) {
-      this.pushUpdate(panel, event.document);
+    if (this.panel && event.document.uri.toString() === this.currentDocUri) {
+      this.pushUpdate(this.panel, event.document);
     }
   }
 
   handleConfigChange(): void {
-    for (const [key, panel] of this.panels) {
-      const uri = vscode.Uri.parse(key);
-      vscode.workspace.openTextDocument(uri).then(doc => {
-        this.pushUpdate(panel, doc);
-      });
+    if (!this.panel || !this.currentDocUri) return;
+    const uri = vscode.Uri.parse(this.currentDocUri);
+    vscode.workspace.openTextDocument(uri).then(doc => {
+      if (this.panel) this.pushUpdate(this.panel, doc);
+    });
+  }
+
+  handleActiveEditorChange(editor: vscode.TextEditor | undefined): void {
+    if (!editor || editor.document.languageId !== 'go') return;
+    const openByDefault = vscode.workspace
+      .getConfiguration('goPreview')
+      .get<boolean>('openByDefault', false);
+
+    if (this.panel) {
+      this.updatePanel(editor.document);
+    } else if (openByDefault) {
+      this.open(editor.document);
     }
   }
 
   dispose(): void {
-    this.panels.forEach(p => p.dispose());
-    this.panels.clear();
+    this.panel?.dispose();
+    this.diagnosticsDisposable?.dispose();
+  }
+
+  private updatePanel(document: vscode.TextDocument): void {
+    if (!this.panel) return;
+    this.currentDocUri = document.uri.toString();
+    this.panel.title = `Preview: ${path.basename(document.fileName)}`;
+    this.pushUpdate(this.panel, document);
+    this.pushDiagnostics(document);
+  }
+
+  private setupDiagnosticsListener(): void {
+    this.diagnosticsDisposable?.dispose();
+    this.diagnosticsDisposable = vscode.languages.onDidChangeDiagnostics(e => {
+      if (!this.currentDocUri) return;
+      const affected = e.uris.some(u => u.toString() === this.currentDocUri);
+      if (!affected) return;
+      const uri = vscode.Uri.parse(this.currentDocUri);
+      vscode.workspace.openTextDocument(uri).then(doc => this.pushDiagnostics(doc));
+    });
+  }
+
+  private pushDiagnostics(document: vscode.TextDocument): void {
+    if (!this.panel) return;
+    const rawDiags = vscode.languages.getDiagnostics(document.uri);
+
+    // Build inverse map: sourceLine → previewLine
+    const sourceToPreview = new Map<number, number>();
+    for (let previewLine = 0; previewLine < this.currentLineMap.length; previewLine++) {
+      const sourceLine = this.currentLineMap[previewLine];
+      if (!sourceToPreview.has(sourceLine)) {
+        sourceToPreview.set(sourceLine, previewLine);
+      }
+    }
+
+    const items = rawDiags.flatMap(d => {
+      const previewLine = sourceToPreview.get(d.range.start.line);
+      if (previewLine === undefined) return [];
+      return [{
+        line: previewLine,
+        startCol: d.range.start.character,
+        endCol: d.range.end.character,
+        severity: d.severity,
+        message: d.message,
+      }];
+    });
+
+    this.panel.webview.postMessage({ type: 'diagnostics', items });
+  }
+
+  private async handleWebviewMessage(msg: { type: string; [key: string]: unknown }): Promise<void> {
+    if (!this.currentDocUri) return;
+    const sourceUri = vscode.Uri.parse(this.currentDocUri);
+
+    if (msg.type === 'navigate') {
+      const line = msg.line as number;
+      const doc = await vscode.workspace.openTextDocument(sourceUri);
+      const editor = await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+      const pos = new vscode.Position(line, 0);
+      editor.selection = new vscode.Selection(pos, pos);
+      editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    }
+
+    if (msg.type === 'definition') {
+      const line = msg.line as number;
+      const col = msg.col as number;
+      const pos = new vscode.Position(line, col);
+      const locations = await vscode.commands.executeCommand<vscode.Location[]>(
+        'vscode.executeDefinitionProvider', sourceUri, pos
+      );
+      if (locations && locations.length > 0) {
+        const loc = locations[0];
+        const doc = await vscode.workspace.openTextDocument(loc.uri);
+        const editor = await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+        editor.selection = new vscode.Selection(loc.range.start, loc.range.start);
+        editor.revealRange(loc.range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+      }
+    }
+
+    if (msg.type === 'hover') {
+      const line = msg.line as number;
+      const col = msg.col as number;
+      const x = msg.x as number;
+      const y = msg.y as number;
+      const pos = new vscode.Position(line, col);
+      const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+        'vscode.executeHoverProvider', sourceUri, pos
+      );
+      if (!hovers || hovers.length === 0) {
+        this.panel?.webview.postMessage({ type: 'hover-result', html: '', x, y });
+        return;
+      }
+
+      const markdown = hovers
+        .flatMap(h => h.contents)
+        .map(c => {
+          if (typeof c === 'string') return c;
+          if ('value' in c) {
+            const ms = c as vscode.MarkdownString;
+            return ms.value;
+          }
+          // MarkedString with language
+          const marked = c as { language: string; value: string };
+          return `\`\`\`${marked.language}\n${marked.value}\n\`\`\``;
+        })
+        .filter(Boolean)
+        .join('\n\n---\n\n');
+
+      let html = '';
+      try {
+        html = await vscode.commands.executeCommand<string>('markdown.api.render', markdown) ?? '';
+      } catch {
+        html = `<pre>${markdown.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre>`;
+      }
+
+      this.panel?.webview.postMessage({ type: 'hover-result', html, x, y });
+    }
   }
 
   private async pushUpdate(panel: vscode.WebviewPanel, document: vscode.TextDocument): Promise<void> {
     const highlighter = await getHighlighter();
     const source = document.getText();
-    const { code } = runTransformers(source);
+    const { code, lineMap } = runTransformers(source);
+    this.currentLineMap = lineMap;
 
     const isDark = vscode.window.activeColorTheme.kind !== vscode.ColorThemeKind.Light;
     const theme = isDark ? 'dark-plus' : 'light-plus';
@@ -88,7 +229,15 @@ export class GoPreviewProvider {
     const tabSize = vscode.workspace.getConfiguration('editor', document.uri).get<number>('tabSize', 4);
 
     const html = highlighter.codeToHtml(code, { lang: 'go', theme });
-    panel.webview.postMessage({ type: 'update', html, tabSize });
+    panel.webview.postMessage({
+      type: 'update',
+      html,
+      tabSize,
+      lineMap,
+      sourceUri: document.uri.toString(),
+    });
+
+    this.pushDiagnostics(document);
   }
 
   private buildShell(webview: vscode.Webview): string {
@@ -112,6 +261,7 @@ export class GoPreviewProvider {
 </head>
 <body>
   <div id="preview-container"></div>
+  <div id="hover-tooltip" style="display:none;position:fixed;z-index:9999;max-width:600px;padding:6px 10px;border-radius:4px;font-size:13px;pointer-events:none;overflow:auto;max-height:300px;"></div>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
