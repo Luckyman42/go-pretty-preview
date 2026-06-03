@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import { Transformer, TransformOutput } from './types';
-import { SingleStatementIfTransformer } from './singleStatementIf';
+import { InlineOneLineIfTransformer } from './inlineOneLineIf';
 
 const allTransformers: Transformer[] = [
-  new SingleStatementIfTransformer(),
+  new InlineOneLineIfTransformer(),
 ];
 
 export function runTransformers(source: string): TransformOutput {

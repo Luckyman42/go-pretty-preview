@@ -59,7 +59,7 @@ Preview updates live (no reload, no flicker)
 ```
 source text
   │
-  ├─ [if enabled] SingleStatementIfTransformer.transform(source)
+  ├─ [if enabled] InlineOneLineIfTransformer.transform(source)
   │    Returns: { code: transformedText, collapsedLineIndices: Set<number> }
   │
   ├─ [future] AnotherTransformer.transform(...)
@@ -77,7 +77,7 @@ The line indices are 0-based and refer to lines in the *output* (not the origina
 
 ---
 
-## How `SingleStatementIfTransformer` works
+## How `InlineOneLineIfTransformer` works
 
 It scans line by line looking for patterns like:
 

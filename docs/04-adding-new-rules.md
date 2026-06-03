@@ -41,7 +41,7 @@ export class DimModuleNamesTransformer implements Transformer {
 import { DimModuleNamesTransformer } from './dimModuleNames';
 
 const allTransformers: Transformer[] = [
-  new SingleStatementIfTransformer(),
+  new InlineOneLineIfTransformer(),
   new DimModuleNamesTransformer(),   // ← add here
 ];
 ```

@@ -80,7 +80,7 @@ The source editor remains fully editable. The preview is read-only.
 
 | Setting | Default | Description |
 |---|---|---|
-| `goPreview.rules.singleStatementIf` | `true` | Collapse single-statement if/else blocks |
+| `goPreview.rules.inlineOneLineIf` | `true` | Inline one-line if/else blocks onto a single line |
 
 Open VS Code Settings (`Ctrl+,`) and search for **"Go Pretty Preview"** to toggle rules.
 
@@ -119,7 +119,7 @@ src/
   transformers/
     types.ts               Transformer interface
     index.ts               Runs all enabled transformers in sequence
-    singleStatementIf.ts   Collapses single-statement if blocks
+    inlineOneLineIf.ts     Inlines one-line if blocks onto a single line
 media/
   preview.css              Webview styles (syntax colours + guard-inline dimming)
   preview.js               Webview script (receives messages, updates DOM)

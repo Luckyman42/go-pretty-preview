@@ -8,8 +8,8 @@ interface ParsedBranch {
 }
 
 /**
- * Collapses if/else-if/else chains where individual branches have a single
- * return, break, or continue statement.
+ * Collapses if/else-if/else chains where individual branches have exactly one
+ * body line (any statement).
  *
  * Single branch:
  *   if err != nil {        →   if err != nil return err        (dimmed)
@@ -25,9 +25,9 @@ interface ParsedBranch {
  *       a = a * 2
  *   }
  */
-export class SingleStatementIfTransformer implements Transformer {
-  readonly id = 'singleStatementIf';
-  readonly label = 'Collapse single-statement if blocks';
+export class InlineOneLineIfTransformer implements Transformer {
+  readonly id = 'inlineOneLineIf';
+  readonly label = 'Inline one-line if blocks';
 
   transform(source: string): TransformOutput {
     const lines = source.split('\n');
@@ -139,7 +139,7 @@ export class SingleStatementIfTransformer implements Transformer {
 
       const closingTrimmed = lines[j].trim();
       const singleStmt = bodyLines.length === 1 ? bodyLines[0].trim() : '';
-      const canCollapse = bodyLines.length === 1 && /^(return|break|continue)(\s.*)?$/.test(singleStmt);
+      const canCollapse = bodyLines.length === 1 && singleStmt.length > 0;
 
       branches.push({ header: headerText, bodyLines, canCollapse, singleStmt });
 

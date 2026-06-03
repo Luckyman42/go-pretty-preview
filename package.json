@@ -43,10 +43,10 @@
     "configuration": {
       "title": "Go Pretty Preview",
       "properties": {
-        "goPreview.rules.singleStatementIf": {
+        "goPreview.rules.inlineOneLineIf": {
           "type": "boolean",
           "default": true,
-          "description": "Collapse single-statement if/else-if/else blocks (return/break/continue) onto one line"
+          "description": "Inline one-line if/else-if/else blocks onto a single line"
         }
       }
     }
