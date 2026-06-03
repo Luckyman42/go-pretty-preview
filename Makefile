@@ -1,4 +1,4 @@
-ake .PHONY: build watch clean install
+.PHONY: build watch clean install
 
 build: node_modules
 	node esbuild.js

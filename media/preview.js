@@ -5,6 +5,7 @@
   const tooltip = document.getElementById('hover-tooltip');
 
   let lineMap = [];
+  let collapsedLines = new Set();
   let hoverTimer = null;
 
   // ── helpers ──────────────────────────────────────────────────────────────
@@ -35,7 +36,9 @@
     const previewLine = previewLineOf(spanEl);
     if (previewLine < 0) return null;
     const sourceLine = lineMap[previewLine] ?? previewLine;
-    const col = colOf(spanEl);
+    // Collapsed lines have been rewritten; column positions no longer map to source.
+    // Fall back to column 0 so hover/definition still resolves at the line start.
+    const col = collapsedLines.has(previewLine) ? 0 : colOf(spanEl);
     return { line: sourceLine, col };
   }
 
@@ -46,14 +49,29 @@
     indices.forEach(i => lines[i]?.classList.add(cssClass));
   }
 
+  function applyLineNumbers() {
+    const lineEls = [...getLineElements()];
+    lineEls.forEach((el, i) => {
+      el.setAttribute('data-line-nr', String((lineMap[i] ?? i) + 1));
+    });
+  }
+
+  // ── scroll sync ───────────────────────────────────────────────────────────
+
+  let scrollTimer = null;
+  // Set to true while we are programmatically scrolling to avoid echoing back.
+  let suppressPreviewScroll = false;
+
   window.addEventListener('message', ({ data }) => {
     if (data.type === 'update') {
       container.innerHTML = data.html;
       const pre = container.querySelector('pre');
       if (pre) pre.style.tabSize = data.tabSize;
       lineMap = data.lineMap ?? [];
+      collapsedLines = new Set(data.collapsedLines ?? []);
       applyLineDecorations(data.fadedLines ?? [], 'line-faded');
       applyLineDecorations(data.highlightedLines ?? [], 'line-highlighted');
+      applyLineNumbers();
       hideTooltip();
     }
 
@@ -68,7 +86,31 @@
         hideTooltip();
       }
     }
+
+    if (data.type === 'scroll-to-line') {
+      suppressPreviewScroll = true;
+      const lineEls = [...getLineElements()];
+      lineEls[data.line]?.scrollIntoView({ block: 'start', behavior: 'instant' });
+      setTimeout(() => { suppressPreviewScroll = false; }, 200);
+    }
   });
+
+  window.addEventListener('scroll', () => {
+    if (suppressPreviewScroll) return;
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      const lineEls = [...getLineElements()];
+      // Find the first line element at or below the viewport top.
+      let topLine = 0;
+      for (let i = 0; i < lineEls.length; i++) {
+        if (lineEls[i].getBoundingClientRect().top >= 0) {
+          topLine = i;
+          break;
+        }
+      }
+      vscode.postMessage({ type: 'scroll-source', line: topLine });
+    }, 120);
+  }, { passive: true });
 
   // ── double-click: navigate to source ─────────────────────────────────────
 

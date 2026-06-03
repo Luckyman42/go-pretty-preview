@@ -1,7 +1,7 @@
 import { Transformer, TransformOutput } from './types';
 
 interface ParsedBranch {
-  header: string;     // e.g. "if err != nil" or "else if x < 0" or "else"
+  header: string; // e.g. "if err != nil" or "else if x < 0" or "else"
   bodyLines: string[];
   canCollapse: boolean;
   singleStmt: string; // populated only when canCollapse
@@ -31,7 +31,7 @@ export class InlineOneLineIfTransformer implements Transformer {
   readonly id = 'inlineOneLineIf';
   readonly label = 'Inline one-line if blocks';
 
-  transform(source: string): TransformOutput {
+  transform(source: string, _configValue?: unknown): TransformOutput {
     const lines = source.split('\n');
     const resultLines: string[] = [];
     const collapsedLineIndices = new Set<number>();
@@ -56,19 +56,28 @@ export class InlineOneLineIfTransformer implements Transformer {
       i++;
     }
 
-    return { code: resultLines.join('\n'), collapsedLineIndices, fadedLineIndices: new Set(), highlightedLineIndices: new Set(), lineMap };
+    return {
+      code: resultLines.join('\n'),
+      collapsedLineIndices,
+      fadedLineIndices: new Set(),
+      highlightedLineIndices: new Set(),
+      lineMap,
+    };
   }
 
   private tryTransformChain(
     lines: string[],
     startIdx: number
-  ): { outputLines: Array<{ text: string; collapsed: boolean; sourceLine: number }>; endIdx: number } | null {
+  ): {
+    outputLines: Array<{ text: string; collapsed: boolean; sourceLine: number }>;
+    endIdx: number;
+  } | null {
     const parsed = this.parseChain(lines, startIdx);
     if (!parsed) return null;
 
     const { branches, endIdx, baseIndent } = parsed;
 
-    if (!branches.some(b => b.canCollapse)) return null;
+    if (!branches.some((b) => b.canCollapse)) return null;
 
     // Single branch → one-liner
     if (branches.length === 1) {
@@ -82,13 +91,29 @@ export class InlineOneLineIfTransformer implements Transformer {
     const outputLines: Array<{ text: string; collapsed: boolean; sourceLine: number }> = [];
     for (const branch of branches) {
       if (branch.canCollapse) {
-        outputLines.push({ text: `${baseIndent}${branch.header} ${branch.singleStmt}`, collapsed: true, sourceLine: branch.headerSourceLine });
+        outputLines.push({
+          text: `${baseIndent}${branch.header} ${branch.singleStmt}`,
+          collapsed: true,
+          sourceLine: branch.headerSourceLine,
+        });
       } else {
-        outputLines.push({ text: `${baseIndent}${branch.header} {`, collapsed: false, sourceLine: branch.headerSourceLine });
+        outputLines.push({
+          text: `${baseIndent}${branch.header} {`,
+          collapsed: false,
+          sourceLine: branch.headerSourceLine,
+        });
         for (let k = 0; k < branch.bodyLines.length; k++) {
-          outputLines.push({ text: branch.bodyLines[k], collapsed: false, sourceLine: branch.headerSourceLine + 1 + k });
+          outputLines.push({
+            text: branch.bodyLines[k],
+            collapsed: false,
+            sourceLine: branch.headerSourceLine + 1 + k,
+          });
         }
-        outputLines.push({ text: `${baseIndent}}`, collapsed: false, sourceLine: branch.closingSourceLine });
+        outputLines.push({
+          text: `${baseIndent}}`,
+          collapsed: false,
+          sourceLine: branch.closingSourceLine,
+        });
       }
     }
 
@@ -118,26 +143,45 @@ export class InlineOneLineIfTransformer implements Transformer {
         headerText = m[1].trimEnd();
       } else {
         const mElseIf = trimmed.match(/^\}\s*(else\s+if\s+.+)\{$/);
-        const mElse   = trimmed.match(/^\}\s*(else)\s*\{$/);
-        if      (mElseIf) headerText = mElseIf[1].trimEnd();
-        else if (mElse)   headerText = mElse[1];
+        const mElse = trimmed.match(/^\}\s*(else)\s*\{$/);
+        if (mElseIf) headerText = mElseIf[1].trimEnd();
+        else if (mElse) headerText = mElse[1];
         else return null;
       }
 
-      // Collect body lines by tracking brace depth from the opening {
+      // Collect body lines by tracking brace depth from the opening {.
+      // Skip braces inside string literals and line comments to avoid false matches.
       let j = i + 1;
       let depth = 1;
       const bodyLines: string[] = [];
 
       outer: while (j < lines.length) {
-        for (const ch of lines[j]) {
+        const line = lines[j];
+        let inString = false;
+        let stringChar = '';
+        for (let ci = 0; ci < line.length; ci++) {
+          const ch = line[ci];
+          if (inString) {
+            if (ch === '\\') {
+              ci++;
+              continue;
+            }
+            if (ch === stringChar) inString = false;
+            continue;
+          }
+          if (ch === '/' && line[ci + 1] === '/') break; // rest of line is a comment
+          if (ch === '"' || ch === '`') {
+            inString = true;
+            stringChar = ch;
+            continue;
+          }
           if (ch === '{') depth++;
           else if (ch === '}') {
             depth--;
             if (depth === 0) break outer;
           }
         }
-        bodyLines.push(lines[j]);
+        bodyLines.push(line);
         j++;
       }
 
@@ -147,7 +191,14 @@ export class InlineOneLineIfTransformer implements Transformer {
       const singleStmt = bodyLines.length === 1 ? bodyLines[0].trim() : '';
       const canCollapse = bodyLines.length === 1 && singleStmt.length > 0;
 
-      branches.push({ header: headerText, bodyLines, canCollapse, singleStmt, headerSourceLine, closingSourceLine: j });
+      branches.push({
+        header: headerText,
+        bodyLines,
+        canCollapse,
+        singleStmt,
+        headerSourceLine,
+        closingSourceLine: j,
+      });
 
       if (closingTrimmed === '}') {
         return { branches, endIdx: j, baseIndent };

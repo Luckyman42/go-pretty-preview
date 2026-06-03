@@ -11,10 +11,7 @@ export function buildPackageDecorations(code: string) {
 
   if (packages.length === 0) return [];
 
-  const pattern = new RegExp(
-    `\\b(${packages.map(escapeRegex).join('|')})\\.`,
-    'g'
-  );
+  const pattern = new RegExp(`\\b(${packages.map(escapeRegex).join('|')})\\.`, 'g');
 
   const decorations: Array<{
     start: { line: number; character: number };

@@ -11,20 +11,24 @@ extension.ts: command "goPreview.openPreview" fires
   ▼
 GoPreviewProvider.open(document)
   │  Creates a WebviewPanel beside the source editor
+  │  Sets up diagnostics + scroll-sync listeners
   │  Calls pushUpdate() immediately to show content
   ▼
 GoPreviewProvider.pushUpdate(panel, document)
-  │  1. document.getText()       → raw Go source
-  │  2. runTransformers(source)  → { code, collapsedLineIndices }
-  │  3. hljs.highlight(code)     → syntax-highlighted HTML string
-  │  4. applyCollapsedClasses()  → wraps collapsed lines in <span class="guard-inline">
-  │  5. panel.webview.postMessage({ type: 'update', html })
+  │  1. document.getText()              → raw Go source
+  │  2. runTransformers(source)         → { code, lineMap, fadedLineIndices, highlightedLineIndices }
+  │  3. buildPackageDecorations(code)   → Shiki token-level decorations for pkg fading
+  │  4. highlighter.codeToHtml(code)    → syntax-highlighted HTML string (Shiki)
+  │  5. panel.webview.postMessage({ type: 'update', html, lineMap, fadedLines, ... })
   ▼
 media/preview.js (runs in the webview/browser)
   │  Receives the message
-  │  Sets document.getElementById('preview-code').innerHTML = html
+  │  Sets container.innerHTML = html
+  │  Calls applyLineDecorations() for faded/highlighted lines
+  │  Calls applyLineNumbers() — sets data-line-nr on each .line element (source line, 1-based)
   ▼
-User sees syntax-highlighted Go code with guard lines dimmed
+User sees syntax-highlighted Go code with source line numbers in the gutter,
+faded/highlighted lines, and optional package-qualifier dimming.
 ```
 
 ---
@@ -41,10 +45,7 @@ VS Code fires vscode.workspace.onDidChangeTextDocument
 extension.ts listener calls provider.handleDocumentChange(event)
   │
   ▼
-GoPreviewProvider finds the panel for this document URI
-  │
-  ▼
-GoPreviewProvider.pushUpdate() runs again → new HTML sent to webview
+GoPreviewProvider debounces (120 ms), then calls pushUpdate()
   │
   ▼
 Preview updates live (no reload, no flicker)
@@ -59,21 +60,32 @@ Preview updates live (no reload, no flicker)
 ```
 source text
   │
-  ├─ [if enabled] InlineOneLineIfTransformer.transform(source)
-  │    Returns: { code: transformedText, collapsedLineIndices: Set<number> }
+  ├─ [alwaysRun] LogVisibilityTransformer.transform(source, configValue)
+  │    Returns: { code, lineMap, fadedLineIndices, highlightedLineIndices, collapsedLineIndices }
+  │    Modes: normal (no-op) | fade | highlight | hide (removes lines, updates lineMap)
   │
-  ├─ [future] AnotherTransformer.transform(...)
+  ├─ [if enabled] InlineOneLineIfTransformer.transform(source, configValue)
+  │    Returns: { code: inlined text, lineMap (composed), collapsedLineIndices }
+  │
+  ├─ [future transformers...]
   │
   ▼
-{ code: finalText, collapsedLineIndices: mergedSet }
+{ code: finalText, lineMap, fadedLineIndices, highlightedLineIndices, collapsedLineIndices }
 ```
 
 Each transformer:
-1. Receives the current `code` string
-2. Returns a new `code` string (with multi-line blocks collapsed)
-3. Returns a `Set<number>` of **output** line indices that were collapsed
+1. Receives the current `code` string and its config value (read once in `runTransformers`, not inside `transform()`)
+2. Returns a new `code` string (possibly with multi-line blocks collapsed)
+3. Returns a correct `lineMap`: `lineMap[outputLine] = sourceLine` (0-based, relative to this transformer's input)
+4. Returns sets of 0-based output line indices for faded, highlighted, and collapsed lines
 
-The line indices are 0-based and refer to lines in the *output* (not the original source). This matters when chaining multiple transformers.
+`runTransformers` composes the line maps across transformers so the final `lineMap[previewLine] → originalSourceLine` is always correct.
+
+---
+
+## Line numbers
+
+After each `update` message, `preview.js` iterates all `.line` elements and sets `data-line-nr` to the 1-based source line from `lineMap`. The CSS `::before` pseudo-element displays this as a gutter. Gaps in the line-number sequence naturally indicate hidden lines (e.g. `logVisibility: hide`).
 
 ---
 
@@ -83,8 +95,8 @@ It scans line by line looking for patterns like:
 
 ```go
     if err != nil {       ← line i:   starts with "if ... {"
-        return err        ← line i+1: single return/break/continue
-    }                     ← line i+2: closing "}" (or "} else {")
+        return err        ← line i+1: single statement body
+    }                     ← line i+2: closing "}"
 ```
 
 When found (and optionally followed by `} else if ...` or `} else {` chains), it:
@@ -93,12 +105,13 @@ When found (and optionally followed by `} else if ...` or `} else {` chains), it
 2. Builds a collapsed line: `"    if err != nil { return err }"`
 3. Checks the collapsed line fits within 120 characters
 4. Pushes the collapsed line to output and records its index in `collapsedLineIndices`
-5. Skips the original 3 (or more) lines
+5. Skips the original 3+ lines, recording the source line of the `if` header in `lineMap`
+
+Brace counting skips characters inside `"..."`, backtick strings, and `//` line comments to avoid false matches.
 
 **What does NOT collapse:**
 - Any branch with more than one statement in the body
 - The result would be longer than 120 characters
-- Branches containing anything other than `return`, `break`, or `continue`
 
 ---
 
@@ -108,39 +121,44 @@ When found (and optionally followed by `} else if ...` or `} else {` chains), it
 <html>
 <head>
   <!-- CSP header — security sandbox -->
-  <!-- preview.css — syntax token colours + guard-inline style -->
+  <!-- preview.css — syntax token colours + gutter line numbers + log/pkg decorations -->
 </head>
 <body>
-  <pre>
-    <code id="preview-code" class="hljs language-go">
-      <!-- This innerHTML is replaced on every update -->
-      package main
-
-      import "fmt"
-
-      func foo(x int) error {
-          result, err := bar(x)
-          <span class="guard-inline">    if err != nil { return err }</span>
-          fmt.Println(result)
-          return nil
-      }
-    </code>
-  </pre>
-  <script src="preview.js"></script>  <!-- just listens for 'update' messages -->
+  <div id="preview-container">
+    <pre style="background-color: ...">
+      <code>
+        <span class="line" data-line-nr="1">package main</span>
+        <span class="line" data-line-nr="2"></span>
+        <span class="line" data-line-nr="3">import "fmt"</span>
+        <!-- ... -->
+        <span class="line line-faded" data-line-nr="12">  slog.Info("done")</span>
+      </code>
+    </pre>
+  </div>
+  <div id="hover-tooltip" ...></div>
+  <script nonce="..." src="preview.js"></script>
 </body>
 </html>
 ```
 
-The `<pre><code>` wrapper preserves whitespace. `innerHTML` replacement is fast and doesn't cause scroll position resets because we're updating the children of a stable element.
+`innerHTML` replacement on every update is fast and doesn't reset scroll position because the container element itself is stable.
+
+---
+
+## Scroll sync
+
+**Source → Preview:** `vscode.window.onDidChangeTextEditorVisibleRanges` fires when the source editor scrolls. The extension finds the first preview line whose source line is ≥ the new top line, and posts `{ type: 'scroll-to-line', line: previewLine }` to the webview. The webview calls `scrollIntoView` on that `.line` element.
+
+**Preview → Source:** The webview listens to `window.scroll`, throttles at 120 ms, finds the first `.line` element at or below the viewport top, and posts `{ type: 'scroll-source', line: previewLine }`. The extension calls `editor.revealRange(sourceLine, AtTop)`.
+
+A `suppressScrollSync` flag (with a 200 ms timeout) on each side prevents the two directions from chasing each other.
 
 ---
 
 ## Settings integration
 
-`vscode.workspace.getConfiguration('goPreview.rules')` reads the user's settings at call time. When the user changes a setting in VS Code's Settings UI:
+`vscode.workspace.getConfiguration('goPreview.rules')` is read **once** in `runTransformers()` and the relevant value is passed as `configValue` to each transformer's `transform()` call. When the user changes a setting:
 
 1. `vscode.workspace.onDidChangeConfiguration` fires
 2. `extension.ts` calls `provider.handleConfigChange()`
-3. All open preview panels re-render with the new settings
-
-This means you can toggle a rule off in settings and see the preview immediately update.
+3. All open preview panels re-render with the new settings immediately

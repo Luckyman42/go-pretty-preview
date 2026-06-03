@@ -1,4 +1,3 @@
-import * as vscode from 'vscode';
 import { Transformer, TransformOutput } from './types';
 
 // Matches a complete single-line slog call statement.
@@ -10,10 +9,8 @@ export class LogVisibilityTransformer implements Transformer {
   readonly label = 'Log line visibility';
   readonly alwaysRun = true;
 
-  transform(source: string): TransformOutput {
-    const mode = vscode.workspace
-      .getConfiguration('goPreview.rules')
-      .get<string>('logVisibility', 'normal');
+  transform(source: string, configValue?: unknown): TransformOutput {
+    const mode = (typeof configValue === 'string' ? configValue : null) ?? 'normal';
 
     const lines = source.split('\n');
     const fadedLineIndices = new Set<number>();

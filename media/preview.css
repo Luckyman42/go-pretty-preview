@@ -14,9 +14,26 @@ body {
   font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
   font-size: var(--vscode-editor-font-size, 14px);
   line-height: var(--vscode-editor-line-height, 1.5);
-  padding: 1.2em 1.5em;
+  padding: 1.2em 1.5em 1.2em 3.8em;
   white-space: pre;
   overflow-x: auto;
+}
+
+/* Source line numbers in gutter */
+#preview-container .line {
+  position: relative;
+}
+#preview-container .line::before {
+  content: attr(data-line-nr);
+  position: absolute;
+  left: -3.5em;
+  width: 3em;
+  text-align: right;
+  color: var(--vscode-editorLineNumber-foreground, #858585);
+  opacity: 0.55;
+  font-size: 0.88em;
+  user-select: none;
+  pointer-events: none;
 }
 
 #preview-container code {

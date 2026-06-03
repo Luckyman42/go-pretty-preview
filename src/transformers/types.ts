@@ -15,5 +15,10 @@ export interface Transformer {
   readonly label: string;
   /** When true the transformer always runs, bypassing the boolean config gate */
   readonly alwaysRun?: boolean;
-  transform(source: string): TransformOutput;
+  /**
+   * configValue: the raw value from goPreview.rules.<id> as read by runTransformers.
+   * Keeping config reads out of transform() makes transformers unit-testable without
+   * a vscode mock.
+   */
+  transform(source: string, configValue?: unknown): TransformOutput;
 }
