@@ -56,7 +56,7 @@ export class InlineOneLineIfTransformer implements Transformer {
       i++;
     }
 
-    return { code: resultLines.join('\n'), collapsedLineIndices, lineMap };
+    return { code: resultLines.join('\n'), collapsedLineIndices, fadedLineIndices: new Set(), highlightedLineIndices: new Set(), lineMap };
   }
 
   private tryTransformChain(

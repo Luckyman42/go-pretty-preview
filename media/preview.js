@@ -41,12 +41,19 @@
 
   // ── message handling ──────────────────────────────────────────────────────
 
+  function applyLineDecorations(indices, cssClass) {
+    const lines = getLineElements();
+    indices.forEach(i => lines[i]?.classList.add(cssClass));
+  }
+
   window.addEventListener('message', ({ data }) => {
     if (data.type === 'update') {
       container.innerHTML = data.html;
       const pre = container.querySelector('pre');
       if (pre) pre.style.tabSize = data.tabSize;
       lineMap = data.lineMap ?? [];
+      applyLineDecorations(data.fadedLines ?? [], 'line-faded');
+      applyLineDecorations(data.highlightedLines ?? [], 'line-highlighted');
       hideTooltip();
     }
 

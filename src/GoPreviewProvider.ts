@@ -220,7 +220,7 @@ export class GoPreviewProvider {
   private async pushUpdate(panel: vscode.WebviewPanel, document: vscode.TextDocument): Promise<void> {
     const highlighter = await getHighlighter();
     const source = document.getText();
-    const { code, lineMap } = runTransformers(source);
+    const { code, lineMap, fadedLineIndices, highlightedLineIndices } = runTransformers(source);
     this.currentLineMap = lineMap;
 
     const isDark = vscode.window.activeColorTheme.kind !== vscode.ColorThemeKind.Light;
@@ -234,6 +234,8 @@ export class GoPreviewProvider {
       html,
       tabSize,
       lineMap,
+      fadedLines: Array.from(fadedLineIndices),
+      highlightedLines: Array.from(highlightedLineIndices),
       sourceUri: document.uri.toString(),
     });
 

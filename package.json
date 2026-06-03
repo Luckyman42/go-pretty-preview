@@ -52,6 +52,18 @@
           "type": "boolean",
           "default": true,
           "description": "Inline one-line if/else-if/else blocks onto a single line"
+        },
+        "goPreview.rules.logVisibility": {
+          "type": "string",
+          "enum": ["normal", "fade", "hide", "highlight"],
+          "enumDescriptions": [
+            "No change — log lines are shown as-is",
+            "Dim log lines (grayscale + low opacity) so the eye skips over them",
+            "Remove log lines from the preview entirely (enables inline-if for single-body blocks)",
+            "Highlight log lines to see logging coverage at a glance"
+          ],
+          "default": "normal",
+          "description": "How slog.* logging calls are rendered in the preview"
         }
       }
     }

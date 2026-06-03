@@ -51,6 +51,18 @@ body {
   text-underline-offset: 2px;
 }
 
+/* Log visibility decorations */
+#preview-container .line-faded {
+  opacity: 0.3;
+  filter: grayscale(100%);
+}
+
+#preview-container .line-highlighted {
+  background-color: rgba(255, 200, 0, 0.12);
+  outline: 1px solid rgba(255, 200, 0, 0.25);
+  outline-offset: -1px;
+}
+
 /* Hover tooltip */
 #hover-tooltip {
   background: var(--vscode-editorHoverWidget-background, #252526);
