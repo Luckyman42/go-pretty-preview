@@ -1,13 +1,13 @@
 import { Tree } from 'web-tree-sitter';
 import { LineDescriptor } from '../descriptors';
 import { Transformer } from './types';
-import { LogVisibilityTransformer } from './logVisibility';
+import { PreviewRulesTransformer } from './previewRules';
 import { InlineOneLineIfTransformer } from './inlineOneLineIf';
 
-// Order matters: LogVisibility runs first because hiding a slog line can turn a
-// multi-statement block into a single-statement one, enabling InlineOneLineIf.
+// Order matters: PreviewRules runs first so that hidden lines don't prevent
+// InlineOneLineIf from collapsing single-statement blocks.
 const allTransformers: Transformer[] = [
-  new LogVisibilityTransformer(),
+  new PreviewRulesTransformer(),
   new InlineOneLineIfTransformer(),
 ];
 

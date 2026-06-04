@@ -117,7 +117,7 @@ body.theme-light #preview-container .tok-number { color: #2e7d32; }
 body.theme-light #preview-container .tok-constant-builtin { color: #b5532a; }
 body.theme-light #preview-container .tok-comment { color: #5f7a5f; font-style: italic; }
 
-/* Log visibility decorations */
+/* Preview Rules: line-level effects */
 #preview-container .line-faded {
   opacity: 0.3;
   filter: grayscale(100%);
@@ -127,6 +127,16 @@ body.theme-light #preview-container .tok-comment { color: #5f7a5f; font-style: i
   background-color: rgba(255, 200, 0, 0.12);
   outline: 1px solid rgba(255, 200, 0, 0.25);
   outline-offset: -1px;
+}
+
+/* Preview Rules: column-level group effects */
+.rule-group-hidden {
+  opacity: 0;
+}
+
+.rule-group-highlighted {
+  background-color: rgba(255, 200, 0, 0.35);
+  border-radius: 2px;
 }
 
 /* Hover tooltip */

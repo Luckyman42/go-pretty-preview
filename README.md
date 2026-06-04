@@ -6,7 +6,7 @@
 
 A VS Code extension that opens a **read-only rendered preview** of Go source files — like Markdown preview, but for Go.
 
-It is built for **reading and reviewing Go code, especially AI-generated code**. The preview keeps your code byte-for-byte intact, but visually quiets down the repetitive, boilerplate-heavy parts (error guards, logging, package qualifiers) so the logic you actually need to review stands out. The goal is simple: **filter out the noise.**
+It is built for **reading and reviewing Go code, especially AI-generated code**. The preview keeps your code byte-for-byte intact, but visually quiets down the repetitive, boilerplate-heavy parts (error guards, package qualifiers) so the logic you actually need to review stands out. The goal is simple: **filter out the noise.**
 
 The source editor stays fully editable; the preview is read-only and updates live as you type.
 
@@ -24,7 +24,7 @@ if err != nil {
 slog.Info("did something", "result", result)
 ```
 
-Three of those four lines are noise for a reviewer. Go Pretty Preview renders the same code so the error guard collapses to one dim line and the log line fades away — leaving the meaningful statement visible. Nothing is deleted from disk; only the *preview* is simplified.
+Three of those four lines are noise for a reviewer. Go Pretty Preview renders the same code so the error guard collapses to one dim line — leaving the meaningful statement visible. Nothing is deleted from disk; only the *preview* is simplified.
 
 ---
 
@@ -74,18 +74,39 @@ The braces are kept (so the output compiles) but rendered at low opacity — the
 
 Toggle with `goPreview.rules.inlineOneLineIf`.
 
-### 2. Log-line visibility (`slog.*`)
+### 2. Preview Rules — regexp-based display control
 
-Choose how single-line `slog.Debug/Info/Warn/Error/Log/LogAttrs(...)` calls are rendered:
+Define per-project rules using JavaScript regexp patterns. Rules are applied in priority order:
 
-| Mode | Effect |
+| Rule | Behaviour |
 |---|---|
-| `normal` | Shown as-is (default) |
-| `fade` | Dimmed (grayscale + low opacity) so the eye skips over them |
+| `protect` | Immune to all other rules — line always shown as-is |
+| `highlight` | Whole line highlighted, or only capture groups if the pattern has them |
 | `hide` | Removed from the preview entirely |
-| `highlight` | Highlighted, to see logging coverage at a glance |
+| `fade` | Whole line dimmed, or only capture groups hidden (opacity 0) if the pattern has them |
 
-Toggle with `goPreview.rules.logVisibility`.
+**Example:** fade all `slog.Info`/`slog.Debug` calls, protect `slog.Fatal` so it always stays visible, and highlight anything that matches `error`:
+
+```jsonc
+"goPreview.rules.previewRules": {
+  "protect": ["\\bslog\\.(Fatal|Panic)"],
+  "highlight": ["(?i)\\berror\\b"],
+  "hide": [],
+  "fade": ["\\bslog\\.(Debug|Info|Warn)\\b"]
+}
+```
+
+**Example with capture groups:** fade the entire argument list of any log call so only the function name stays visible:
+
+```jsonc
+"goPreview.rules.previewRules": {
+  "fade": ["\\bslog\\.\\w+\\((.*?)\\)\\s*$"]
+}
+```
+
+With capture groups the matched text is hidden (opacity 0); without groups the whole line is dimmed.
+
+Patterns are JavaScript regexps. Common recipes are listed in [AGENTS.md](AGENTS.md).
 
 ### 3. Package-qualifier fading
 
@@ -158,7 +179,7 @@ Open Settings (`Ctrl+,`) and search for **"Go Pretty Preview"**.
 |---|---|---|---|
 | `goPreview.openByDefault` | boolean | `false` | Open the preview automatically when a Go file is activated |
 | `goPreview.rules.inlineOneLineIf` | boolean | `true` | Inline one-line `if`/`else-if`/`else` blocks onto a single line |
-| `goPreview.rules.logVisibility` | enum | `normal` | How `slog.*` calls render: `normal` / `fade` / `hide` / `highlight` |
+| `goPreview.rules.previewRules` | object | `{}` | Regexp-based display rules: `protect`, `highlight`, `hide`, `fade` — each a list of JS regexp strings |
 | `goPreview.rules.fadePackages` | string[] | `[]` | Package names whose qualifier (e.g. `fmt.`) renders dimmed |
 
 ---
@@ -192,7 +213,7 @@ src/
     transformers/
       types.ts             Transformer interface (descriptor in / descriptor out)
       index.ts             Runs enabled transformers over one shared source tree
-      logVisibility.ts     slog.* fade / hide / highlight
+      previewRules.ts      Regexp-based protect / highlight / hide / fade rules
       inlineOneLineIf.ts   Collapses single-statement if/else chains to valid Go
     decorations/
       types.ts             DecorationProvider interface (column-level effects)
@@ -217,7 +238,7 @@ deliberately distinct, read-only look. A single source tree drives all transform
 
 - `if`/`else` chains collapse only when each branch has at most one visible statement. A branch with a trailing line-comment on its body line (`if x { stmt // note`) is also left expanded to preserve the comment.
 - Hover / go-to-definition column accuracy on collapsed lines relies on the per-column source map (`colMap`); very long conditions with Unicode may shift by a character.
-- Only `slog.*` log calls are recognised for the log-visibility rule; other logging libraries are not supported.
+- Preview Rules patterns are matched against each output line independently; there is no multi-line regexp support.
 
 ---
 

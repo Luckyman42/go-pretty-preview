@@ -49,12 +49,16 @@ export class GoHighlighter {
       for (const c of caps) paintCapture(tokClasses, c);
     }
 
-    // pkg-faded columns per line.
-    const pkgFaded: Array<Set<number> | undefined> = [];
+    // Per-column decoration CSS classes per output line. Multiple decorations on
+    // the same column are space-joined so all their classes apply to that span.
+    const colDecos: Array<Map<number, string> | undefined> = [];
     for (const d of input.decorations) {
-      if (d.properties.class !== 'pkg-faded' || d.start.line !== d.end.line) continue;
-      const set = (pkgFaded[d.start.line] ??= new Set<number>());
-      for (let c = d.start.character; c < d.end.character; c++) set.add(c);
+      if (d.start.line !== d.end.line) continue;
+      const lineDecos = (colDecos[d.start.line] ??= new Map<number, string>());
+      for (let c = d.start.character; c < d.end.character; c++) {
+        const existing = lineDecos.get(c);
+        lineDecos.set(c, existing ? `${existing} ${d.properties.class}` : d.properties.class);
+      }
     }
 
     const html = lines
@@ -64,7 +68,7 @@ export class GoHighlighter {
           input.colMaps[i],
           input.lineMap[i] ?? i,
           tokClasses[i],
-          pkgFaded[i],
+          colDecos[i],
           input.collapsedLines.has(i)
         )
       )
@@ -77,7 +81,7 @@ export class GoHighlighter {
     colMap: SourcePos[] | null,
     srcLine: number,
     tokCls: Array<string | undefined>,
-    pkgSet: Set<number> | undefined,
+    lineDecos: Map<number, string> | undefined,
     collapsed: boolean
   ): string {
     if (text.length === 0) return '<span class="line"></span>';
@@ -86,9 +90,9 @@ export class GoHighlighter {
     const keys: string[] = new Array(text.length);
     for (let c = 0; c < text.length; c++) {
       const tok = tokCls[c] ?? '';
-      const faded = pkgSet?.has(c) ? 'pkg-faded' : '';
+      const deco = lineDecos?.get(c) ?? '';
       const brace = collapsed && (text[c] === '{' || text[c] === '}') ? 'brace-faded' : '';
-      keys[c] = `${tok}|${faded}|${brace}`;
+      keys[c] = `${tok}|${deco}|${brace}`;
     }
 
     let out = '<span class="line">';
@@ -123,8 +127,8 @@ function emitSpan(
   srcLine: number,
   key: string
 ): string {
-  const [tok, faded, brace] = key.split('|');
-  const classes = [tok, faded, brace].filter(Boolean).join(' ');
+  const [tok, deco, brace] = key.split('|');
+  const classes = [tok, deco, brace].filter(Boolean).join(' ');
   const sp = (colMap && colMap[col]) || { line: srcLine, col };
   const clsAttr = classes ? ` class="${classes}"` : '';
   return `<span${clsAttr} data-sl="${sp.line}" data-sc="${sp.col}">${escapeHtml(slice)}</span>`;

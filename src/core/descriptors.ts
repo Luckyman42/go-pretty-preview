@@ -14,6 +14,12 @@ export interface SourcePos {
   col: number;
 }
 
+/** A half-open [start, end) column range on an output line. */
+export interface ColRange {
+  start: number;
+  end: number;
+}
+
 export interface LineDescriptor {
   /** Primary source line (0-based) this output line maps to — drives lineMap,
    *  diagnostics and scroll-sync. For reflowed lines it is the header's row. */
@@ -30,6 +36,10 @@ export interface LineDescriptor {
    *  where a single `sourceLine` cannot describe every column. When absent, an
    *  output column maps directly to `{ line: sourceLine, col }`. */
   colMap?: SourcePos[];
+  /** Column ranges whose text is hidden (opacity 0) — set by previewRules fade with groups. */
+  fadeRanges?: ColRange[];
+  /** Column ranges that are highlighted — set by previewRules highlight with groups. */
+  highlightRanges?: ColRange[];
 }
 
 /** Builds the initial 1:1 descriptor list from the original source. */
@@ -46,6 +56,10 @@ export interface MaterializedOutput {
   highlightedLineIndices: Set<number>;
   /** colMaps[outputLine] = per-column source positions, or null when 1:1. */
   colMaps: Array<SourcePos[] | null>;
+  /** Per-output-line column ranges to hide (opacity 0), or null when none. */
+  fadeRanges: Array<ColRange[] | null>;
+  /** Per-output-line column ranges to highlight, or null when none. */
+  highlightRanges: Array<ColRange[] | null>;
 }
 
 /** Flattens a descriptor list into the shapes the provider/webview consume. */
@@ -56,6 +70,8 @@ export function materialize(descriptors: LineDescriptor[]): MaterializedOutput {
   const fadedLineIndices = new Set<number>();
   const highlightedLineIndices = new Set<number>();
   const colMaps: Array<SourcePos[] | null> = [];
+  const fadeRanges: Array<ColRange[] | null> = [];
+  const highlightRanges: Array<ColRange[] | null> = [];
 
   descriptors.forEach((d, i) => {
     texts.push(d.text);
@@ -64,6 +80,8 @@ export function materialize(descriptors: LineDescriptor[]): MaterializedOutput {
     if (d.faded) fadedLineIndices.add(i);
     if (d.highlighted) highlightedLineIndices.add(i);
     colMaps.push(d.colMap ?? null);
+    fadeRanges.push(d.fadeRanges ?? null);
+    highlightRanges.push(d.highlightRanges ?? null);
   });
 
   return {
@@ -73,6 +91,8 @@ export function materialize(descriptors: LineDescriptor[]): MaterializedOutput {
     fadedLineIndices,
     highlightedLineIndices,
     colMaps,
+    fadeRanges,
+    highlightRanges,
   };
 }
 

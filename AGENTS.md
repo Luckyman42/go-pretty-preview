@@ -58,7 +58,7 @@ webview (media/preview.js)
 | `src/core/transformers/types.ts` | `Transformer` interface: `transform(descriptors, tree, configValue) → descriptors` |
 | `src/core/transformers/index.ts` | `runTransformers()` — iterates transformers over one shared source tree, no intermediate re-parses |
 | `src/core/transformers/inlineOneLineIf.ts` | Collapses single-statement `if`/`else` chain branches |
-| `src/core/transformers/logVisibility.ts` | Fades / hides / highlights `slog.*` lines |
+| `src/core/transformers/previewRules.ts` | Regexp-based protect / highlight / hide / fade rules (priority order) |
 | `src/core/decorations/types.ts` | `DecorationProvider` interface for column-level effects |
 | `src/core/decorations/packageDecorations.ts` | `buildPackageDecorations()` — dims configured package qualifiers; config passed in, not read internally |
 | `media/preview.js` | Webview script: renders HTML, applies line decorations, wires hover/click/scroll via `data-sl`/`data-sc` |
@@ -112,7 +112,7 @@ Key points:
 - **Input and output are both `LineDescriptor[]`.** The transformer receives the current descriptor list (already processed by earlier transformers) and returns a new one.
 - **`tree` is the AST of the original source**, parsed once before any transformer runs. Node row/column positions are always in original-source coordinates.
 - **`configValue`** is the raw value of `goPreview.rules.<id>` read by `runTransformers` before calling the transformer. Keep `vscode.workspace.getConfiguration` calls out of `transform()` so transformers remain pure and testable.
-- Use **`alwaysRun = true`** only for transformers that read their own enum/array config and decide internally (like `logVisibility`). Boolean-gated transformers omit it.
+- Use **`alwaysRun = true`** only for transformers that read their own object/array config and decide internally (like `previewRules`). Boolean-gated transformers omit it.
 
 ---
 
@@ -120,9 +120,9 @@ Key points:
 
 1. **Text reflow** (e.g. `inlineOneLineIf`) — merges several source lines into one output descriptor. Set `collapsed: true` and fill in a `colMap` (use `LineBuilder`) so hover and go-to-definition resolve correctly on the merged line.
 
-2. **Annotation** — leaves descriptors otherwise intact but sets `faded: true`, `highlighted: true`, or removes a descriptor (`hide` mode in `logVisibility`). These don't touch the text, so no `colMap` is needed.
+2. **Annotation** — leaves descriptors otherwise intact but sets `faded: true`, `highlighted: true`, `fadeRanges`, `highlightRanges`, or removes a descriptor (`hide` in `previewRules`). These don't touch the text, so no `colMap` is needed.
 
-Column-level effects (e.g. package-qualifier fading) live in a `DecorationProvider` (`src/core/decorations/types.ts`), which receives the materialized output code and its tree. They run after `materialize()`, not inside the transformer pipeline.
+Column-level effects live in two places: `DecorationProvider` (`src/core/decorations/types.ts`) for AST-driven effects (package fading), and descriptor `fadeRanges`/`highlightRanges` for regexp-captured column ranges (preview rules). Both are converted to `Decoration[]` in `GoPreviewProvider` and passed to the highlighter.
 
 When adding a rule, **pick the lightest mechanism**: annotation over reflow, decoration over annotation, when the effect doesn't require changing line structure.
 
@@ -135,7 +135,7 @@ When adding a rule, **pick the lightest mechanism**: annotation over reflow, dec
    - Return a new array (or the same if nothing changed). Never mutate in place.
    - Guard against ERROR subtrees with `isErrorNode` / `containsError` from `src/core/astUtils.ts`.
 
-2. **Register it in `src/core/transformers/index.ts`** in the correct position. Order matters: `LogVisibility` runs before `InlineOneLineIf` so hidden log lines don't prevent if-collapsing.
+2. **Register it in `src/core/transformers/index.ts`** in the correct position. Order matters: `PreviewRules` runs before `InlineOneLineIf` so hidden lines don't prevent if-collapsing.
 
 3. **Add a config entry in `package.json`** under `contributes.configuration.properties`:
    - The key must be `goPreview.rules.<transformer.id>`.
@@ -144,6 +144,34 @@ When adding a rule, **pick the lightest mechanism**: annotation over reflow, dec
 4. **Add any CSS** to `media/preview.css` for new classes you reference. Line-level classes are applied in `media/preview.js` via `applyLineDecorations()`.
 
 5. **Update the README** Settings table and feature list.
+
+---
+
+## Preview Rules — common patterns
+
+The `goPreview.rules.previewRules` setting accepts four lists of JavaScript regexp strings, applied in priority order: `protect > highlight > hide > fade`. Patterns are matched per output line.
+
+With **capture groups**, `fade` hides only the matched group text (opacity 0) and `highlight` highlights only those columns; without groups the whole line is affected.
+
+```jsonc
+// Hide slog.Debug and slog.Info; protect Fatal/Panic; highlight errors
+"goPreview.rules.previewRules": {
+  "protect": ["\\bslog\\.(Fatal|Panic)\\b"],
+  "highlight": ["(?i)\\berror\\b"],
+  "hide": ["\\bslog\\.(Debug|Info)\\s*\\("],
+  "fade": ["\\bslog\\.Warn\\s*\\("]
+}
+
+// Fade only the argument list of any logger call, keeping the method name visible
+"goPreview.rules.previewRules": {
+  "fade": ["\\b(?:slog|log|logger)\\.\\w+\\((.*?)\\)\\s*$"]
+}
+
+// For zerolog / zap projects
+"goPreview.rules.previewRules": {
+  "hide": ["\\blogger\\.(?:Debug|Info)\\b", "\\.Msg\\(", "\\.Send\\("]
+}
+```
 
 ---
 
@@ -186,7 +214,7 @@ npm run lint          # eslint src
 - Toggle the rule's setting off → preview reverts; on → reapplies (settings changes re-render live).
 - Double-click a line — it should jump to the **correct source line** (validates `sourceLine` in your descriptors).
 - Ctrl+click a symbol and hover it on both a normal line and a collapsed line — confirm definition/hover resolve to the right position.
-- Try a file with `slog.*` calls and `if/else` chains together to confirm transformers compose correctly.
+- Try a file with `previewRules` patterns and `if/else` chains together to confirm transformers compose correctly.
 - Check both a dark and a light color theme.
 
 ---

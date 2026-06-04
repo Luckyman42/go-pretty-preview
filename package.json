@@ -74,22 +74,33 @@
           "default": [],
           "description": "Package names whose qualifier (e.g. fmt.) is rendered dimmed in the preview. Example: [\"fmt\", \"sync\", \"context\"]"
         },
-        "goPreview.rules.logVisibility": {
-          "type": "string",
-          "enum": [
-            "normal",
-            "fade",
-            "hide",
-            "highlight"
-          ],
-          "enumDescriptions": [
-            "No change — log lines are shown as-is",
-            "Dim log lines (grayscale + low opacity) so the eye skips over them",
-            "Remove log lines from the preview entirely (enables inline-if for single-body blocks)",
-            "Highlight log lines to see logging coverage at a glance"
-          ],
-          "default": "normal",
-          "description": "How slog.* logging calls are rendered in the preview"
+        "goPreview.rules.previewRules": {
+          "type": "object",
+          "description": "Regexp-based display rules, applied in priority order: protect > highlight > hide > fade. Each property is a list of JavaScript regexp strings matched against the full text of each output line.",
+          "properties": {
+            "protect": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Lines matching any pattern are immune to all other rules."
+            },
+            "highlight": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Lines matching are highlighted. With capture groups, only the matched groups are highlighted."
+            },
+            "hide": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Lines matching are removed from the preview entirely."
+            },
+            "fade": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Lines matching are dimmed. With capture groups, only the matched groups are hidden (opacity 0)."
+            }
+          },
+          "additionalProperties": false,
+          "default": {}
         }
       }
     }

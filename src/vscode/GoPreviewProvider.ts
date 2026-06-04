@@ -3,8 +3,9 @@ import * as path from 'path';
 import { randomBytes } from 'crypto';
 import { Tree } from 'web-tree-sitter';
 import { runTransformers } from '../core/transformers/index';
-import { descriptorsFromSource, materialize, LineDescriptor } from '../core/descriptors';
+import { descriptorsFromSource, materialize, LineDescriptor, ColRange } from '../core/descriptors';
 import { buildPackageDecorations } from '../core/decorations/packageDecorations';
+import { Decoration } from '../core/decorations/types';
 import { createGoHighlighter, GoHighlighter } from '../core/highlighter';
 import { GO_HIGHLIGHTS_SCM } from '../core/goHighlights';
 import { ParserService } from './ParserService';
@@ -313,6 +314,8 @@ export class GoPreviewProvider {
       highlightedLineIndices,
       collapsedLineIndices,
       colMaps,
+      fadeRanges,
+      highlightRanges,
     } = materialize(descriptors);
 
     // 2) Parse the output once for syntax highlighting and decorations.
@@ -341,6 +344,8 @@ export class GoPreviewProvider {
     try {
       const packages = config.get<string[]>('fadePackages', []);
       const decorations = buildPackageDecorations(code, packages, outputTree);
+      appendRangeDecorations(decorations, fadeRanges, 'rule-group-hidden');
+      appendRangeDecorations(decorations, highlightRanges, 'rule-group-highlighted');
       html = highlighter.render({
         code,
         tree: outputTree,
@@ -394,6 +399,25 @@ export class GoPreviewProvider {
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
+  }
+}
+
+function appendRangeDecorations(
+  decorations: Decoration[],
+  ranges: Array<ColRange[] | null>,
+  cssClass: string
+): void {
+  for (let i = 0; i < ranges.length; i++) {
+    const lineRanges = ranges[i];
+    if (!lineRanges) continue;
+    for (const r of lineRanges) {
+      decorations.push({
+        start: { line: i, character: r.start },
+        end: { line: i, character: r.end },
+        properties: { class: cssClass },
+        alwaysWrap: true,
+      });
+    }
   }
 }
 
