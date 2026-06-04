@@ -2,32 +2,23 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { randomBytes } from 'crypto';
 import { Tree } from 'web-tree-sitter';
-import { createHighlighterCore } from 'shiki/core';
-import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
-import darkPlusTheme from 'shiki/dist/themes/dark-plus.mjs';
-import lightPlusTheme from 'shiki/dist/themes/light-plus.mjs';
-import goLang from 'shiki/dist/langs/go.mjs';
 import { runTransformers } from '../core/transformers/index';
 import { descriptorsFromSource, materialize, LineDescriptor } from '../core/descriptors';
-import { PackageDecorationProvider } from '../core/decorations/packageDecorations';
+import { buildPackageDecorations } from '../core/decorations/packageDecorations';
+import { createGoHighlighter, GoHighlighter } from '../core/highlighter';
+import { GO_HIGHLIGHTS_SCM } from '../core/goHighlights';
 import { ParserService } from './ParserService';
 
-type Highlighter = Awaited<ReturnType<typeof createHighlighterCore>>;
+let highlighterPromise: Promise<GoHighlighter> | null = null;
 
-let highlighterPromise: Promise<Highlighter> | null = null;
-
-function getHighlighter(): Promise<Highlighter> {
+function getHighlighter(parser: ParserService): Promise<GoHighlighter> {
   if (!highlighterPromise) {
-    highlighterPromise = createHighlighterCore({
-      themes: [darkPlusTheme, lightPlusTheme],
-      langs: [goLang],
-      engine: createJavaScriptRegexEngine(),
-    });
+    highlighterPromise = parser
+      .getLanguage()
+      .then((lang) => createGoHighlighter(lang, GO_HIGHLIGHTS_SCM));
   }
   return highlighterPromise;
 }
-
-const packageDecorations = new PackageDecorationProvider();
 
 export class GoPreviewProvider {
   private panel: vscode.WebviewPanel | undefined;
@@ -45,8 +36,7 @@ export class GoPreviewProvider {
   private suppressScrollSync = false;
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    getHighlighter().catch(() => {});
-    ParserService.getInstance(); // trigger WASM load early
+    getHighlighter(ParserService.getInstance()).catch(() => {}); // trigger WASM + query early
   }
 
   toggle(document: vscode.TextDocument): void {
@@ -332,7 +322,7 @@ export class GoPreviewProvider {
     } catch {
       outputTree = null;
     }
-    const highlighter = await getHighlighter();
+    const highlighter = await getHighlighter(parser);
 
     // A newer update (or a document switch) superseded this one while we awaited.
     // Bail before touching shared state so stale data can't clobber the current doc.
@@ -343,8 +333,6 @@ export class GoPreviewProvider {
     this.currentLineMap = lineMap;
 
     const isDark = vscode.window.activeColorTheme.kind !== vscode.ColorThemeKind.Light;
-    const theme = isDark ? 'dark-plus' : 'light-plus';
-
     const tabSize = vscode.workspace
       .getConfiguration('editor', document.uri)
       .get<number>('tabSize', 4);
@@ -352,8 +340,15 @@ export class GoPreviewProvider {
     let html: string;
     try {
       const packages = config.get<string[]>('fadePackages', []);
-      const decorations = packageDecorations.build({ code, tree: outputTree }, packages);
-      html = highlighter.codeToHtml(code, { lang: 'go', theme, decorations });
+      const decorations = buildPackageDecorations(code, packages, outputTree);
+      html = highlighter.render({
+        code,
+        tree: outputTree,
+        lineMap,
+        colMaps,
+        collapsedLines: collapsedLineIndices,
+        decorations,
+      });
     } finally {
       outputTree?.delete();
     }
@@ -361,6 +356,7 @@ export class GoPreviewProvider {
     panel.webview.postMessage({
       type: 'update',
       html,
+      theme: isDark ? 'dark' : 'light',
       tabSize,
       lineMap,
       fadedLines: Array.from(fadedLineIndices),

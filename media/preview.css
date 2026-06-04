@@ -8,15 +8,18 @@ body {
   line-height: var(--vscode-editor-line-height, 1.5);
 }
 
-/* Shiki sets background-color as inline style on <pre>; override with VS Code's theme variable */
 #preview-container pre {
-  background-color: var(--vscode-editor-background, #1e1e1e) !important;
+  background-color: var(--vscode-editor-background, #1e1e1e);
   font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
   font-size: var(--vscode-editor-font-size, 14px);
   line-height: var(--vscode-editor-line-height, 1.5);
   padding: 1.2em 1.5em 1.2em 3.8em;
   white-space: pre;
   overflow-x: auto;
+}
+
+#preview-container code {
+  color: var(--vscode-editor-foreground, #d4d4d4);
 }
 
 /* Source line numbers in gutter */
@@ -62,7 +65,7 @@ body {
 }
 
 /* Ctrl+click: show clickable cursor and underline when Ctrl/Cmd is held */
-#preview-container.ctrl-held span[style]:hover {
+#preview-container.ctrl-held [data-sl]:hover {
   cursor: pointer !important;
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -73,6 +76,46 @@ body {
   opacity: 0.25;
   filter: grayscale(100%);
 }
+
+/* Collapsed inline-if remnant braces: present (copy-pasteable) but visually quiet */
+.brace-faded {
+  opacity: 0.3;
+}
+
+/* ── Syntax palette ───────────────────────────────────────────────────────
+   Two hand-tuned palettes give the preview a distinct, read-only look rather
+   than mirroring the editor. The body class (theme-dark / theme-light) is set
+   from the extension based on the active color theme. */
+
+/* Dark palette */
+body.theme-dark #preview-container .tok-keyword { color: #c896d6; }
+body.theme-dark #preview-container .tok-function,
+body.theme-dark #preview-container .tok-function-builtin,
+body.theme-dark #preview-container .tok-function-method { color: #6fb3d2; }
+body.theme-dark #preview-container .tok-type { color: #5cb89f; }
+body.theme-dark #preview-container .tok-namespace { color: #d0a85c; }
+body.theme-dark #preview-container .tok-property { color: #9cc4e4; }
+body.theme-dark #preview-container .tok-operator { color: #9aa0a6; }
+body.theme-dark #preview-container .tok-string { color: #c0a36e; }
+body.theme-dark #preview-container .tok-escape { color: #d7a36a; }
+body.theme-dark #preview-container .tok-number { color: #b5cea8; }
+body.theme-dark #preview-container .tok-constant-builtin { color: #cf8b6b; }
+body.theme-dark #preview-container .tok-comment { color: #6f806f; font-style: italic; }
+
+/* Light palette */
+body.theme-light #preview-container .tok-keyword { color: #8a3fa0; }
+body.theme-light #preview-container .tok-function,
+body.theme-light #preview-container .tok-function-builtin,
+body.theme-light #preview-container .tok-function-method { color: #2b6cb0; }
+body.theme-light #preview-container .tok-type { color: #1f8a70; }
+body.theme-light #preview-container .tok-namespace { color: #9a6a00; }
+body.theme-light #preview-container .tok-property { color: #2c5d8a; }
+body.theme-light #preview-container .tok-operator { color: #555555; }
+body.theme-light #preview-container .tok-string { color: #8a6d1f; }
+body.theme-light #preview-container .tok-escape { color: #a05a1f; }
+body.theme-light #preview-container .tok-number { color: #2e7d32; }
+body.theme-light #preview-container .tok-constant-builtin { color: #b5532a; }
+body.theme-light #preview-container .tok-comment { color: #5f7a5f; font-style: italic; }
 
 /* Log visibility decorations */
 #preview-container .line-faded {

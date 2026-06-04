@@ -5,7 +5,6 @@
   const tooltip = document.getElementById('hover-tooltip');
 
   let lineMap = [];
-  let collapsedLines = new Set();
   let hoverTimer = null;
 
   // ── helpers ──────────────────────────────────────────────────────────────
@@ -20,33 +19,16 @@
     return [...getLineElements()].indexOf(lineEl);
   }
 
-  function colOf(spanEl) {
-    const lineEl = spanEl.closest('.line');
-    if (!lineEl) return 0;
-    let col = 0;
-    // Walk the subtree in document order, accumulating text content until
-    // we reach spanEl. Handles tokens nested inside decoration wrapper spans
-    // (e.g. <span class="pkg-faded"><span style="...">fmt</span></span>).
-    function walk(node) {
-      if (node === spanEl) return true;
-      if (node.nodeType === 3 /* TEXT_NODE */) { col += node.textContent.length; return false; }
-      for (let i = 0; i < node.childNodes.length; i++) {
-        if (walk(node.childNodes[i])) return true;
-      }
-      return false;
-    }
-    walk(lineEl);
-    return col;
-  }
-
-  function sourcePosOf(spanEl) {
-    const previewLine = previewLineOf(spanEl);
-    if (previewLine < 0) return null;
-    const sourceLine = lineMap[previewLine] ?? previewLine;
-    // Collapsed lines have been rewritten; column positions no longer map to source.
-    // Fall back to column 0 so hover/definition still resolves at the line start.
-    const col = collapsedLines.has(previewLine) ? 0 : colOf(spanEl);
-    return { line: sourceLine, col };
+  // The renderer stamps every token span with the exact source position
+  // (data-sl / data-sc) it maps to — including reflowed/collapsed lines, where
+  // the column comes from the descriptor colMap. No DOM walking or fallback.
+  function sourcePosOf(el) {
+    const span = el.closest ? el.closest('[data-sl]') : null;
+    if (!span) return null;
+    const line = parseInt(span.getAttribute('data-sl'), 10);
+    const col = parseInt(span.getAttribute('data-sc'), 10);
+    if (Number.isNaN(line) || Number.isNaN(col)) return null;
+    return { line, col };
   }
 
   // ── message handling ──────────────────────────────────────────────────────
@@ -72,10 +54,12 @@
   window.addEventListener('message', ({ data }) => {
     if (data.type === 'update') {
       container.innerHTML = data.html;
+      // Switch the token palette to match the editor theme (read-only look).
+      document.body.classList.toggle('theme-dark', data.theme !== 'light');
+      document.body.classList.toggle('theme-light', data.theme === 'light');
       const pre = container.querySelector('pre');
       if (pre) pre.style.tabSize = data.tabSize;
       lineMap = data.lineMap ?? [];
-      collapsedLines = new Set(data.collapsedLines ?? []);
       applyLineDecorations(data.fadedLines ?? [], 'line-faded');
       applyLineDecorations(data.highlightedLines ?? [], 'line-highlighted');
       applyLineNumbers();
@@ -143,7 +127,7 @@
 
   container.addEventListener('click', e => {
     if (!e.ctrlKey && !e.metaKey) return;
-    const spanEl = e.target.closest ? e.target.closest('span[style]') : null;
+    const spanEl = e.target.closest ? e.target.closest('[data-sl]') : null;
     if (!spanEl) return;
     const pos = sourcePosOf(spanEl);
     if (!pos) return;
@@ -155,7 +139,7 @@
 
   container.addEventListener('mousemove', e => {
     clearTimeout(hoverTimer);
-    const spanEl = e.target.closest ? e.target.closest('span[style]') : null;
+    const spanEl = e.target.closest ? e.target.closest('[data-sl]') : null;
     if (!spanEl) {
       hideTooltip();
       return;

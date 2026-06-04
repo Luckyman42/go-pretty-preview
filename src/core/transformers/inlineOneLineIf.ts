@@ -4,21 +4,31 @@ import { LineDescriptor, LineBuilder } from '../descriptors';
 import { isErrorNode, containsError, blockStatements, blockHasCommentOnRow } from '../astUtils';
 
 /**
- * Collapses if/else-if/else chains whose branches reduce to a single (still
- * visible) statement into one valid-Go line, e.g.
+ * Collapses if/else-if/else chains where any branch has exactly one visible
+ * statement. The format puts each branch on its own line, with the closing `}`
+ * of the previous branch starting that line — which is the Go-idiomatic position
+ * for `else`:
  *
- *   if err != nil {        →   if err != nil { return err }   (collapsed)
- *       return err
+ *   if err != nil {          →   if err != nil { return err        (collapsed)
+ *       return err               } else if ok {                    (collapsed)
+ *   } else if ok {               } else { x = 0 }                 (collapsed)
+ *       return nil
+ *   } else {
+ *       x = 0
  *   }
  *
- * The output is valid Go (braces kept) so the tree-sitter renderer can highlight
- * it; the remaining braces are faded by the renderer on collapsed lines. Each
+ * Mixed chains work naturally — multi-statement branches get `} else ... {` as
+ * their opening line and keep their body intact:
+ *
+ *   if err != nil { return err      ← single-stmt, collapsed
+ *   } else {                        ← multi-stmt, expanded
+ *       x = compute()
+ *       y = x + 1
+ *   }
+ *
+ * The output is always valid Go (braces are preserved, just faded). Each
  * collapsed line carries a per-column `colMap` so hover / go-to-definition still
  * resolve to exact source positions.
- *
- * "Still visible" is evaluated against the descriptor list, so a slog statement
- * hidden by LogVisibility is not counted — that is what lets a two-statement body
- * collapse without any re-parse (the AST is the original source).
  */
 export class InlineOneLineIfTransformer implements Transformer {
   readonly id = 'inlineOneLineIf';
@@ -83,17 +93,34 @@ function buildChainOutput(
 
   const evals = chain.branches.map((b) => evalBranch(b, present, descBySource));
 
-  // The output must be valid Go (the renderer parses it), and in Go `else` must
-  // sit on the same line as the preceding `}`. So we collapse a chain only when
-  // EVERY branch reduces to a single visible statement, joining the whole chain
-  // into one line: `if c1 { s1 } else if c2 { s2 } else { s3 }`. A mixed chain
-  // (some branch still multi-line) is left untouched rather than producing an
-  // invalid split.
-  if (!evals.every((e) => e.canCollapse)) return null;
+  // Only proceed when at least one branch can be compressed; all-expanded chains
+  // are left entirely untouched (they look identical, just re-arranged).
+  if (!evals.some((e) => e.canCollapse)) return null;
 
-  const line = buildCollapsedChain(chain.baseIndent, chain.branches, evals);
-  if (line.text.length > 160) return null;
-  return { output: [line], endRow: chain.endRow };
+  const { branches, baseIndent, endRow } = chain;
+  const output: LineDescriptor[] = [];
+
+  for (let bi = 0; bi < branches.length; bi++) {
+    const b = branches[bi];
+    const e = evals[bi];
+    const isFirst = bi === 0;
+    const isLast = bi === branches.length - 1;
+    const prev = isFirst ? null : branches[bi - 1];
+
+    if (e.canCollapse) {
+      const d = buildCollapsedBranchLine(baseIndent, b, e, isFirst, isLast, prev);
+      if (d.text.length > 120) {
+        // Too long — keep this branch expanded instead.
+        appendExpandedBranch(output, baseIndent, b, isFirst, isLast, present, descBySource, prev);
+      } else {
+        output.push(d);
+      }
+    } else {
+      appendExpandedBranch(output, baseIndent, b, isFirst, isLast, present, descBySource, prev);
+    }
+  }
+
+  return { output, endRow };
 }
 
 function parseChain(
@@ -178,45 +205,91 @@ function evalBranch(
   return { canCollapse: safe, stmt: safe ? stmt : null, desc: safe ? desc : undefined };
 }
 
-// Assembles a whole if/else chain into one valid-Go line:
-//   `<indent>if c1 { s1 } else if c2 { s2 } else { s3 }`
-// while recording, for every output column, the source position it came from.
-// Verbatim segments (conditions, statements) map precisely; synthesized braces
-// and joining spaces map to a representative source position.
-function buildCollapsedChain(
+// Builds the single output line for a collapsed (single-stmt) branch:
+//
+//   first, not-last:  `<indent><header> { <stmt>`         (no closing `}`)
+//   first, last:      `<indent><header> { <stmt> }`
+//   non-first:        `<indent>} <header> { <stmt>`        (the `}` closes the prev branch)
+//   non-first, last:  `<indent>} <header> { <stmt> }`
+//
+// The closing `}` of a non-last branch is provided by the *next* branch's
+// opening `}`, keeping `else` on the same line as `}` (Go requirement).
+function buildCollapsedBranchLine(
   baseIndent: string,
-  branches: Branch[],
-  evals: BranchEval[]
+  b: Branch,
+  e: BranchEval,
+  isFirst: boolean,
+  isLast: boolean,
+  prev: Branch | null
 ): LineDescriptor {
+  const stmt = e.stmt!;
+  const desc = e.desc!;
+  const stmtText = desc.text.trim();
+  const stmtIndentLen = desc.text.length - desc.text.trimStart().length;
+
   const lb = new LineBuilder();
-  const firstRow = branches[0].headerRow;
-  lb.appendAt(baseIndent, { line: firstRow, col: 0 });
+  lb.appendAt(baseIndent, { line: b.headerRow, col: 0 });
 
-  branches.forEach((b, bi) => {
-    const stmt = evals[bi].stmt!;
-    const desc = evals[bi].desc!;
-    const stmtText = desc.text.trim();
-    const stmtIndentLen = desc.text.length - desc.text.trimStart().length;
+  if (!isFirst && prev) {
+    // `} ` — the `}` closes the previous branch's block.
+    lb.appendAt('}', { line: prev.closingRow, col: prev.closeBraceCol });
+    lb.appendAt(' ', { line: b.headerRow, col: 0 });
+  }
 
-    if (bi > 0) lb.appendAt(' ', { line: b.headerRow, col: b.braceCol }); // join ` else`
-    lb.append(b.header, b.headerRow, baseIndent.length);
-    lb.appendAt(' ', { line: b.headerRow, col: b.braceCol });
-    lb.appendAt('{', { line: b.headerRow, col: b.braceCol });
-    lb.appendAt(' ', { line: b.headerRow, col: b.braceCol });
-    lb.append(stmtText, stmt.startPosition.row, stmtIndentLen);
+  lb.append(b.header, b.headerRow, baseIndent.length);
+  lb.appendAt(' ', { line: b.headerRow, col: b.braceCol });
+  lb.appendAt('{', { line: b.headerRow, col: b.braceCol });
+  lb.appendAt(' ', { line: b.headerRow, col: b.braceCol });
+  lb.append(stmtText, stmt.startPosition.row, stmtIndentLen);
+
+  if (isLast) {
     lb.appendAt(' ', { line: stmt.startPosition.row, col: stmtIndentLen + stmtText.length });
     lb.appendAt('}', { line: b.closingRow, col: b.closeBraceCol });
-  });
+  }
 
   const { text, colMap } = lb.build();
   return {
-    sourceLine: firstRow,
+    sourceLine: b.headerRow,
     text,
     collapsed: true,
     colMap,
-    faded: evals.every((e) => e.desc!.faded) || undefined,
-    highlighted: evals.some((e) => e.desc!.highlighted) || undefined,
+    faded: desc.faded,
+    highlighted: desc.highlighted,
   };
+}
+
+// Appends descriptors for a multi-statement (non-collapsed) branch. The `}`
+// that closes the previous branch is prepended to the opening line (if not-first)
+// so that `else` always appears on the same line as `}` in the output.
+//
+// The closing `}` of this branch is only emitted when it is the last branch —
+// otherwise the NEXT branch's opening line will supply the `}`.
+function appendExpandedBranch(
+  out: LineDescriptor[],
+  baseIndent: string,
+  b: Branch,
+  isFirst: boolean,
+  isLast: boolean,
+  present: Set<number>,
+  descBySource: Map<number, LineDescriptor>,
+  prev: Branch | null
+): void {
+  // Opening line: `[} ]<header> {`
+  const prefix = !isFirst && prev ? `} ` : '';
+  out.push({ sourceLine: b.headerRow, text: `${baseIndent}${prefix}${b.header} {` });
+
+  // Body (only visible lines).
+  for (let r = b.headerRow + 1; r < b.closingRow; r++) {
+    if (present.has(r)) {
+      const d = descBySource.get(r);
+      if (d) out.push(d);
+    }
+  }
+
+  // Closing `}` only when last; non-last closing `}` is provided by the next branch.
+  if (isLast) {
+    out.push({ sourceLine: b.closingRow, text: `${baseIndent}}` });
+  }
 }
 
 function leadingWhitespace(line: string): string {

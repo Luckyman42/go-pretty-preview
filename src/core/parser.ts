@@ -22,6 +22,7 @@ function defaultReadFile(filePath: string): Uint8Array {
 
 export class GoParser {
   private parser!: Parser;
+  private lang!: Language;
   private readonly ready: Promise<void>;
   private readonly readFile: (filePath: string) => Uint8Array;
 
@@ -37,14 +38,20 @@ export class GoParser {
       locateFile: (name: string) => path.join(wasmDir, name),
     });
     this.parser = new Parser();
-    const lang = await Language.load(this.readFile(path.join(wasmDir, 'tree-sitter-go.wasm')));
-    this.parser.setLanguage(lang);
+    this.lang = await Language.load(this.readFile(path.join(wasmDir, 'tree-sitter-go.wasm')));
+    this.parser.setLanguage(this.lang);
     log?.('ready');
   }
 
   /** Resolves once the WASM language is loaded. */
   whenReady(): Promise<void> {
     return this.ready;
+  }
+
+  /** The loaded Go `Language` (for compiling highlight queries). */
+  async getLanguage(): Promise<Language> {
+    await this.ready;
+    return this.lang;
   }
 
   /**

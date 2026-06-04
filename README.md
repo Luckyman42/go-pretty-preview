@@ -30,7 +30,7 @@ Three of those four lines are noise for a reviewer. Go Pretty Preview renders th
 
 ## Features
 
-### 1. Single-statement `if` blocks → one line
+### 1. `if`/`else` chains → compact, valid Go
 
 Go's error-propagation pattern is readable but visually heavy across a whole file:
 
@@ -41,18 +41,36 @@ if err != nil {
 }
 ```
 
-In the preview it collapses onto a single line, letting the "happy path" stand out:
+In the preview each single-statement branch is compacted onto its own line:
 
 ```go
 result, err := doSomething()
 if err != nil { return nil, err }
 ```
 
-Works for **any** single-statement `if` body — not just `err != nil`:
+Mixed `if`/`else-if`/`else` chains also work — single-statement branches collapse, multi-statement ones stay expanded, and the output is always valid Go:
 
-- `return`, `break`, `continue`, assignments, single calls, etc.
-- `else if` / `else` chains, where each qualifying branch is collapsed individually
-- Skips the collapse if the resulting line would exceed 120 characters
+```go
+// before
+if a > b {
+    return a
+} else if b > a {
+    return b
+} else {
+    x := b
+    return x * 2
+}
+
+// preview
+if a > b { return a
+} else if b > a { return b
+} else {
+    x := b
+    return x * 2
+}
+```
+
+The braces are kept (so the output compiles) but rendered at low opacity — they read as punctuation, not code. Applies to **any** single-statement body: `return`, `break`, `continue`, assignments, calls, etc.
 
 Toggle with `goPreview.rules.inlineOneLineIf`.
 
@@ -88,9 +106,9 @@ The preview is wired into the same language server (gopls) that powers your edit
 - **Hover a symbol** → the gopls hover tooltip (types, docs)
 - **Diagnostics** → errors/warnings from gopls are mirrored as squiggles in the preview
 
-### 5. Theme-aware syntax highlighting
+### 5. Syntax highlighting with a deliberate read-only look
 
-Rendering uses [Shiki](https://shiki.style/) with VS Code's `dark-plus` / `light-plus` themes and follows your active color theme automatically.
+Rendering uses **tree-sitter highlight queries** — the same parser that powers the transformer pipeline — so there is one source of truth for both structure and color. The palette is intentionally different from your editor: the preview is meant to *look* read-only, not like a second editor pane. Dark and light palettes switch automatically with your VS Code theme.
 
 ---
 
@@ -154,42 +172,52 @@ npm run watch      # rebuild on change
 # Press F5 in VS Code to launch the Extension Development Host
 ```
 
-See [AGENTS.md](AGENTS.md) for the architecture, conventions, and a guide to adding new rules — written for both human contributors and AI coding agents. Background reading lives in [docs/](docs/):
-
-- [01 — VS Code Extension Overview](docs/01-vscode-extension-overview.md)
-- [02 — Webview & Custom Editor API](docs/02-custom-editor-api.md)
-- [03 — How This Extension Works](docs/03-how-this-extension-works.md)
-- [04 — Adding New Rules](docs/04-adding-new-rules.md)
+See [AGENTS.md](AGENTS.md) for the architecture, conventions, and a guide to adding new rules — written for both human contributors and AI coding agents.
 
 ---
 
 ## Project structure
 
+The code is split into a **vscode-free `core/`** (pure, easily testable) and a thin
+**`vscode/`** layer that wires it to the editor:
+
 ```
 src/
-  extension.ts             Entry point — activate() wires up commands & listeners
-  GoPreviewProvider.ts     Owns the webview panel, runs the pipeline, bridges to gopls
-  packageDecorations.ts    Builds Shiki token decorations for package fading
-  transformers/
-    types.ts               Transformer interface + TransformOutput shape
-    index.ts               Runs all enabled transformers in sequence, composes line maps
-    logVisibility.ts       slog.* fade / hide / highlight
-    inlineOneLineIf.ts     Collapses single-statement if/else chains
+  core/                    vscode-free — pure logic, no editor APIs
+    parser.ts              GoParser (injectable wasmDir) + parseGo() test helper
+    descriptors.ts         LineDescriptor model + materialize() + LineBuilder (colMap)
+    astUtils.ts            ERROR-subtree degradation, block statement helpers
+    goHighlights.ts        Inlined Go tree-sitter highlight query
+    highlighter.ts         Tree-sitter captures → HTML (token spans with source positions)
+    transformers/
+      types.ts             Transformer interface (descriptor in / descriptor out)
+      index.ts             Runs enabled transformers over one shared source tree
+      logVisibility.ts     slog.* fade / hide / highlight
+      inlineOneLineIf.ts   Collapses single-statement if/else chains to valid Go
+    decorations/
+      types.ts             DecorationProvider interface (column-level effects)
+      packageDecorations.ts  Package-prefix fading (config passed in, not read here)
+  vscode/                  editor integration
+    extension.ts           Entry point — activate() wires up commands & listeners
+    GoPreviewProvider.ts   Owns the webview panel, runs the pipeline, bridges to gopls
+    ParserService.ts       vscode wrapper around core GoParser (wasmDir + OutputChannel)
 media/
-  preview.css              Webview styles (theme tokens, dimming, tooltip, diagnostics)
+  preview.css              Webview styles (two syntax palettes, dimming, tooltip, diagnostics)
   preview.js               Webview script (renders HTML, navigation, hover, diagnostics)
-docs/                      Architecture & contributor docs
 .github/                   Release workflow + issue templates
 ```
+
+The preview is rendered with **tree-sitter highlight queries** (not Shiki) into a
+deliberately distinct, read-only look. A single source tree drives all transformers
+(no per-step re-parse); the rendered output is always valid Go.
 
 ---
 
 ## Known limitations
 
-- Transformers are **line/regex-based**, not a full Go parser. Braces inside string literals or comments can confuse block detection in rare cases.
-- Go-to-definition / hover column targeting is approximate on **collapsed** lines, because a transformed line no longer maps 1:1 to source columns.
-
-See [improvement.md](improvement.md) for the full roadmap and known-issues list.
+- `if`/`else` chains collapse only when each branch has at most one visible statement. A branch with a trailing line-comment on its body line (`if x { stmt // note`) is also left expanded to preserve the comment.
+- Hover / go-to-definition column accuracy on collapsed lines relies on the per-column source map (`colMap`); very long conditions with Unicode may shift by a character.
+- Only `slog.*` log calls are recognised for the log-visibility rule; other logging libraries are not supported.
 
 ---
 
@@ -197,7 +225,7 @@ See [improvement.md](improvement.md) for the full roadmap and known-issues list.
 
 Contributions are welcome — new preview rules, bug fixes, docs. Please read [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) first.
 
-The easiest way to contribute is to **add a new transformer** — see [docs/04-adding-new-rules.md](docs/04-adding-new-rules.md).
+The easiest way to contribute is to **add a new transformer**; [AGENTS.md](AGENTS.md) walks through the architecture and the steps to add one.
 
 ---
 

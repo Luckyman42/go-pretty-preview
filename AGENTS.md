@@ -8,78 +8,150 @@ Guidance for AI coding agents (and humans) working in this repository. Read this
 
 `go-pretty-preview` is a VS Code extension that renders a **read-only, simplified preview** of Go source files to make code review — especially of AI-generated Go — faster. It never modifies the user's file; it only changes how the code is *displayed* in a side panel.
 
-The core idea: a **pipeline of transformers** rewrites and/or annotates the Go source text, the result is syntax-highlighted with Shiki, and the HTML is pushed into a webview that also bridges back to the language server (gopls) for navigation, hover, and diagnostics.
+The core idea: a **pipeline of transformers** annotates and rewrites a list of line descriptors derived from the parsed Go source, the result is syntax-highlighted using **tree-sitter highlight queries**, and the HTML is pushed into a webview that bridges back to the language server (gopls) for navigation, hover, and diagnostics.
 
 ---
 
 ## Architecture at a glance
 
 ```
-.go file ──▶ runTransformers(source) ──▶ Shiki highlight ──▶ webview HTML
-              │  (src/transformers)        + package          (media/preview.js)
-              │                              decorations            │
-              ▼                                                     ▼
-   { code, lineMap, fadedLineIndices,                      gopls bridge:
-     highlightedLineIndices, ... }                         navigate / definition /
-              │                                            hover / diagnostics
-              └── lineMap keeps preview lines ◀───────────▶ source lines
+.go file
+   │
+   ▼
+GoParser.parse()  ←── single source tree, shared by ALL transformers
+   │
+   ▼
+runTransformers(descriptors, tree)   ← src/core/transformers/index.ts
+   │  each transformer annotates / rewrites the LineDescriptor list
+   ▼
+materialize(descriptors)
+   │  → code (string), lineMap, fadedLines, collapsedLines, colMaps
+   │
+   ▼
+GoParser.parse(code)   ← parse the OUTPUT once for highlighting
+   │
+   ├──▶ GoHighlighter.render()       ← tree-sitter captures → HTML spans
+   │      every span carries data-sl/data-sc (exact source position)
+   │
+   └──▶ buildPackageDecorations()    ← column-level pkg-faded ranges
+   │
+   ▼
+webview (media/preview.js)
+   │  receives: html, lineMap, fadedLines, collapsedLines, colMaps, theme
+   │
+   └──▶ gopls bridge: navigate / definition / hover / diagnostics
+          positions come from data-sl/data-sc attributes, no DOM walking
 ```
 
 ### Key files
 
 | File | Responsibility |
 |---|---|
-| [src/extension.ts](src/extension.ts) | `activate()` — registers the command and the workspace/editor/config listeners that drive re-renders |
-| [src/GoPreviewProvider.ts](src/GoPreviewProvider.ts) | Owns the `WebviewPanel`. Runs the pipeline, highlights with Shiki, posts updates, and handles webview→host messages (navigate / definition / hover) and diagnostics |
-| [src/transformers/index.ts](src/transformers/index.ts) | `runTransformers()` — runs each enabled transformer in order and **composes the line maps** so the final `lineMap[previewLine] → sourceLine` is correct |
-| [src/transformers/types.ts](src/transformers/types.ts) | `Transformer` interface and `TransformOutput` shape |
-| [src/transformers/inlineOneLineIf.ts](src/transformers/inlineOneLineIf.ts) | Collapses single-statement `if`/`else` chains |
-| [src/transformers/logVisibility.ts](src/transformers/logVisibility.ts) | Fades / hides / highlights `slog.*` lines |
-| [src/packageDecorations.ts](src/packageDecorations.ts) | Builds Shiki token-level decorations to dim configured package qualifiers (this is **not** a `Transformer` — it runs after highlighting) |
-| [media/preview.js](media/preview.js) | Webview script: applies the HTML, line decorations, and wires double-click / ctrl+click / hover / diagnostics |
-| [media/preview.css](media/preview.css) | Webview styles, all driven by `--vscode-*` theme variables |
-
-### The two ways a rule can change the preview
-
-1. **Source-text transform** — rewrites the Go text before highlighting (e.g. `inlineOneLineIf`, `logVisibility` in `hide` mode). These change line structure, so they **must** return a correct `lineMap`.
-2. **Decoration** — leaves the text intact but marks lines or tokens for styling:
-   - **Line-level**: return line indices in `fadedLineIndices` / `highlightedLineIndices`; the webview adds a CSS class to that line.
-   - **Token-level**: emit Shiki decorations (see `packageDecorations.ts`) that wrap a character range in a class.
-
-When adding a rule, pick the lightest mechanism that achieves the effect. Prefer decorations over text rewriting when you don't need to change line structure — they can't desync the line map.
+| `src/vscode/extension.ts` | `activate()` — registers commands and workspace/editor/config listeners |
+| `src/vscode/GoPreviewProvider.ts` | Owns the `WebviewPanel`. Runs the full pipeline, posts updates, handles webview→host messages (navigate / definition / hover) and diagnostics. Holds the async generation counter that prevents stale updates from landing. |
+| `src/vscode/ParserService.ts` | Thin vscode wrapper around `GoParser`: supplies `__dirname` as `wasmDir` and logs to an OutputChannel |
+| `src/core/parser.ts` | `GoParser` — vscode-free, injectable `wasmDir`. Also exports `parseGo()` for use in tests or scripts |
+| `src/core/descriptors.ts` | `LineDescriptor` model, `descriptorsFromSource()`, `materialize()`, `LineBuilder` (per-column source maps) |
+| `src/core/astUtils.ts` | ERROR-subtree helpers (`isErrorNode`, `containsError`, `blockStatements`, `blockHasCommentOnRow`) |
+| `src/core/goHighlights.ts` | Inlined Go tree-sitter highlight query (`.scm` as a string) |
+| `src/core/highlighter.ts` | `GoHighlighter` — tree-sitter `Query.captures()` → HTML with `data-sl`/`data-sc` per span |
+| `src/core/transformers/types.ts` | `Transformer` interface: `transform(descriptors, tree, configValue) → descriptors` |
+| `src/core/transformers/index.ts` | `runTransformers()` — iterates transformers over one shared source tree, no intermediate re-parses |
+| `src/core/transformers/inlineOneLineIf.ts` | Collapses single-statement `if`/`else` chain branches |
+| `src/core/transformers/logVisibility.ts` | Fades / hides / highlights `slog.*` lines |
+| `src/core/decorations/types.ts` | `DecorationProvider` interface for column-level effects |
+| `src/core/decorations/packageDecorations.ts` | `buildPackageDecorations()` — dims configured package qualifiers; config passed in, not read internally |
+| `media/preview.js` | Webview script: renders HTML, applies line decorations, wires hover/click/scroll via `data-sl`/`data-sc` |
+| `media/preview.css` | Webview styles — two custom syntax palettes (dark/light), `brace-faded`, `pkg-faded`, diagnostics, line decorations |
 
 ---
 
-## The `TransformOutput` contract
+## The `src/core/` vs `src/vscode/` split
+
+Everything under `src/core/` has **no `import * as vscode`**. It is pure TypeScript — parser, transformers, descriptor model, highlighter. This makes it runnable and testable without a VS Code mock.
+
+`src/vscode/` is the thin integration layer: it reads configuration, supplies `__dirname` for the WASM path, owns the webview panel, and calls into the gopls bridge. Every vscode-specific input (config values, WASM directory, logger) is injected into `core/` as a parameter.
+
+---
+
+## The descriptor model
+
+Instead of repeatedly rewriting a source string and re-parsing after every transformer, the pipeline works on a list of `LineDescriptor` objects:
 
 ```ts
-interface TransformOutput {
-  code: string;                          // possibly-rewritten source
-  collapsedLineIndices: Set<number>;     // output lines that were collapsed
-  fadedLineIndices: Set<number>;         // output lines to render dimmed
-  highlightedLineIndices: Set<number>;   // output lines to render highlighted
-  lineMap: number[];                     // lineMap[outputLine] = sourceLine (0-based)
+interface LineDescriptor {
+  sourceLine: number;   // 0-based source row this output line maps to
+  text: string;         // the rendered text for this line
+  faded?: boolean;      // render dimmed
+  highlighted?: boolean;
+  collapsed?: boolean;  // this line was reflowed from multiple source lines
+  colMap?: SourcePos[]; // colMap[outputCol] = { line, col } in source
+                        // only set on reflowed lines; otherwise 1:1
 }
 ```
 
-Rules to respect:
+`descriptorsFromSource(source)` creates the initial 1:1 list. Transformers annotate or rewrite it. `materialize(descriptors)` flattens it into the shapes the provider and webview consume (`code`, `lineMap`, index sets, `colMaps`).
 
-- **`lineMap` is mandatory and must be exact.** Every entry in the returned `code` needs a `lineMap` entry pointing at the source line it came from. `runTransformers` composes maps across transformers; a wrong map breaks navigation, hover, and diagnostics alignment.
-- **All index sets are 0-based and refer to lines in *this transformer's output*,** not the original source. `runTransformers` translates them through the composed map.
-- Transformers must be **pure**: `(source: string) => TransformOutput`. No VS Code side effects inside `transform()`. Reading configuration via `vscode.workspace.getConfiguration` inside `transform()` is the current pattern (see `logVisibility.ts`), but keep it to config reads only.
-- Ordering matters and is currently encoded by array position in `index.ts` (`LogVisibilityTransformer` runs before `InlineOneLineIfTransformer`, because hiding a log line can turn a multi-statement block into a single-statement one). If you add a transformer with ordering needs, document it next to its registration.
+The **`lineMap` and faded/collapsed sets are derived automatically** from the descriptor fields — no manual composition needed.
 
 ---
 
-## Adding a new transformer (the common task)
+## The `Transformer` interface
 
-1. Create `src/transformers/yourRule.ts` implementing `Transformer`. Return a complete `TransformOutput` (don't forget `lineMap`, even if it's the identity map `source.split('\n').map((_, i) => i)`).
-2. Register it in `src/transformers/index.ts` in the right position.
-3. Add a `goPreview.rules.yourRule` setting in `package.json` under `contributes.configuration.properties`. **The setting key must equal the transformer's `id`** — `runTransformers` gates on `config.get(transformer.id)`. Use `alwaysRun = true` only for transformers that read their own enum/array config and decide internally (like `logVisibility`).
-4. Add any CSS class you reference to `media/preview.css`, and apply it in `media/preview.js` if it's a line-level decoration.
-5. Update the README Settings table and the feature list.
+```ts
+interface Transformer {
+  readonly id: string;
+  readonly label: string;
+  readonly alwaysRun?: boolean;
+  transform(input: LineDescriptor[], tree: Tree | null, configValue?: unknown): LineDescriptor[];
+}
+```
 
-Full walkthrough: [docs/04-adding-new-rules.md](docs/04-adding-new-rules.md).
+Key points:
+
+- **Input and output are both `LineDescriptor[]`.** The transformer receives the current descriptor list (already processed by earlier transformers) and returns a new one.
+- **`tree` is the AST of the original source**, parsed once before any transformer runs. Node row/column positions are always in original-source coordinates.
+- **`configValue`** is the raw value of `goPreview.rules.<id>` read by `runTransformers` before calling the transformer. Keep `vscode.workspace.getConfiguration` calls out of `transform()` so transformers remain pure and testable.
+- Use **`alwaysRun = true`** only for transformers that read their own enum/array config and decide internally (like `logVisibility`). Boolean-gated transformers omit it.
+
+---
+
+## The two ways a rule can change the preview
+
+1. **Text reflow** (e.g. `inlineOneLineIf`) — merges several source lines into one output descriptor. Set `collapsed: true` and fill in a `colMap` (use `LineBuilder`) so hover and go-to-definition resolve correctly on the merged line.
+
+2. **Annotation** — leaves descriptors otherwise intact but sets `faded: true`, `highlighted: true`, or removes a descriptor (`hide` mode in `logVisibility`). These don't touch the text, so no `colMap` is needed.
+
+Column-level effects (e.g. package-qualifier fading) live in a `DecorationProvider` (`src/core/decorations/types.ts`), which receives the materialized output code and its tree. They run after `materialize()`, not inside the transformer pipeline.
+
+When adding a rule, **pick the lightest mechanism**: annotation over reflow, decoration over annotation, when the effect doesn't require changing line structure.
+
+---
+
+## Adding a new transformer
+
+1. **Create `src/core/transformers/yourRule.ts`** implementing `Transformer`.  
+   - Iterate `input: LineDescriptor[]`. For each descriptor, read `d.sourceLine` to look up AST nodes by row.
+   - Return a new array (or the same if nothing changed). Never mutate in place.
+   - Guard against ERROR subtrees with `isErrorNode` / `containsError` from `src/core/astUtils.ts`.
+
+2. **Register it in `src/core/transformers/index.ts`** in the correct position. Order matters: `LogVisibility` runs before `InlineOneLineIf` so hidden log lines don't prevent if-collapsing.
+
+3. **Add a config entry in `package.json`** under `contributes.configuration.properties`:
+   - The key must be `goPreview.rules.<transformer.id>`.
+   - `runTransformers` calls `getConfig(transformer.id)` and passes the result as `configValue`.
+
+4. **Add any CSS** to `media/preview.css` for new classes you reference. Line-level classes are applied in `media/preview.js` via `applyLineDecorations()`.
+
+5. **Update the README** Settings table and feature list.
+
+---
+
+## WASM and tree management
+
+- `GoParser.parse()` returns a `Tree` that lives on the **WASM heap** — it is NOT garbage-collected.
+- **Every `Tree` returned by `parse()` must be freed with `tree.delete()`** when you are done with it.
+- `GoPreviewProvider.pushUpdate()` frees both the source tree (after `runTransformers`) and the output tree (after `render()`) in `try/finally` blocks. Follow this pattern if you introduce another parse call.
 
 ---
 
@@ -87,10 +159,10 @@ Full walkthrough: [docs/04-adding-new-rules.md](docs/04-adding-new-rules.md).
 
 - **TypeScript strict mode is on.** No `any` without a comment explaining why.
 - **No comments that restate the code.** Comment the *why*, not the *what*.
-- **Match the surrounding style** — small pure functions, early returns, no clever one-liners.
-- **Keep transformer logic pure;** side effects (webview messaging, gopls calls) live only in `GoPreviewProvider`.
-- **Theme through variables.** Never hard-code colors in CSS; use `--vscode-*` variables with a sensible fallback, as the existing CSS does.
-- **Webview security:** the CSP only allows the nonce'd script and `cspSource` styles. Don't introduce inline scripts, remote resources, or new `localResourceRoots` without a reason.
+- **Match the surrounding style** — small pure functions, early returns.
+- **`src/core/` must stay vscode-free.** If you find yourself writing `import * as vscode` in a core file, move the vscode-specific part to `src/vscode/`.
+- **Theme through variables.** Never hard-code colors in CSS; use `--vscode-*` variables with a sensible fallback. The two syntax palettes in `preview.css` use `body.theme-dark` / `body.theme-light` class selectors — follow that pattern for new token classes.
+- **Webview security:** the CSP allows only the nonce'd script and `cspSource` styles. Don't introduce inline scripts, remote resources, or new `localResourceRoots` without a reason.
 - **Commit/PR style:** `feat: ...`, `fix: ...`, `docs: ...`, `refactor: ...`. One focused change per PR.
 
 ---
@@ -99,30 +171,30 @@ Full walkthrough: [docs/04-adding-new-rules.md](docs/04-adding-new-rules.md).
 
 ```bash
 npm install
-npm run build         # esbuild bundle → out/extension.js
+npm run build         # esbuild bundle → out/extension.js + .wasm copies
 npm run watch         # rebuild on change
-npm run typecheck     # tsc --noEmit (esbuild does NOT type-check — run this before committing)
+npm run typecheck     # tsc --noEmit — always run before committing
+npm run lint          # eslint src
 # Press F5 in VS Code to launch the Extension Development Host
 ```
 
-> ⚠️ `npm run build` (esbuild) does **not** type-check. Always run `npm run typecheck` before considering a change done. There is currently no automated test suite — verify rules by hand in the Extension Development Host against representative Go files. If you add tests, wire them into `package.json` scripts and the CI workflow (`.github/workflows/ci.yml`).
+> ⚠️ `npm run build` (esbuild) does **not** type-check. Always run `npm run typecheck` before considering a change done. There is currently no automated test suite — verify rules by hand in the Extension Development Host. If you add tests, wire them into `package.json` scripts and `.github/workflows/ci.yml`.
 
 ### Manual verification checklist for a rule change
 
-- Open a `.go` file, open the preview, confirm the rule renders as intended.
+- Open a `.go` file, open the preview (`Ctrl+K V`), confirm the rule renders as intended.
 - Toggle the rule's setting off → preview reverts; on → reapplies (settings changes re-render live).
-- Double-click a line and confirm it lands on the **correct source line** (this validates your `lineMap`).
-- Ctrl+click a symbol and hover it — confirm definition/hover still resolve.
+- Double-click a line — it should jump to the **correct source line** (validates `sourceLine` in your descriptors).
+- Ctrl+click a symbol and hover it on both a normal line and a collapsed line — confirm definition/hover resolve to the right position.
+- Try a file with `slog.*` calls and `if/else` chains together to confirm transformers compose correctly.
 - Check both a dark and a light color theme.
 
 ---
 
-## Gotchas / current sharp edges
+## Gotchas / sharp edges
 
-- **Line maps are the #1 source of subtle bugs.** If navigation/diagnostics land on the wrong line after your change, your `lineMap` is wrong. The source line number shown in the gutter makes this visually obvious during testing.
-- **Block detection is mostly robust** — `inlineOneLineIf` skips braces inside `"..."`, backtick strings, and `//` line comments. Rare edge cases with multi-line strings or `/* */` block comments may still fool it.
-- **`collapsedLineIndices` is computed but not forwarded to the webview** — there is no dedicated CSS class for collapsed lines. The source line number in the gutter already shows that a preview line maps to a different source location. If explicit visual marking is needed in the future, wire `collapsedLineIndices` through `pushUpdate`.
-- **Column mapping on collapsed lines is approximate** — definition/hover may be slightly off on a line that was rewritten by `inlineOneLineIf` (the column is measured against the transformed text, not the source).
-- **Config reads happen in `runTransformers`, not inside `transform()`** — this is intentional. It keeps transformer logic pure and vscode-free, making them unit-testable without mocking.
-
-See [improvement.md](improvement.md) for the prioritized list of known issues and planned work.
+- **`sourceLine` is the #1 source of subtle bugs.** If navigation or diagnostics land on the wrong line, a descriptor has the wrong `sourceLine`. The source line numbers shown in the preview gutter make this visually obvious during testing.
+- **`colMap` on reflowed lines.** A collapsed `if err != nil { return err }` line spans multiple source rows; without `colMap`, all columns would map to the header row. Always use `LineBuilder` when merging source lines so hover/definition resolve correctly anywhere on the collapsed line.
+- **ERROR subtrees during live editing.** The source is frequently half-valid while typing. Guard bejárások with `isErrorNode` / `containsError` to skip unparseable regions rather than bailing on the whole file.
+- **Config reads outside `transform()`.** `runTransformers` reads config and passes it as `configValue`. Reading `vscode.workspace.getConfiguration` inside `transform()` would make the transformer untestable — keep the core layer vscode-free.
+- **Async generation counter.** `GoPreviewProvider` increments `updateGeneration` at the start of each `pushUpdate`. After every `await`, check `gen !== this.updateGeneration` before writing shared state — otherwise a stale async update can clobber the current document's data.

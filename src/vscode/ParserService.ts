@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { Tree } from 'web-tree-sitter';
+import { Tree, Language } from 'web-tree-sitter';
 import { GoParser } from '../core/parser';
 
 let instance: ParserService | undefined;
@@ -39,5 +39,10 @@ export class ParserService {
    */
   parse(source: string): Promise<Tree> {
     return this.parser.parse(source);
+  }
+
+  /** The loaded Go `Language`, for compiling the highlight query. */
+  getLanguage(): Promise<Language> {
+    return this.parser.getLanguage();
   }
 }
