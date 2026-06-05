@@ -31,6 +31,11 @@
         "icon": "$(open-preview)"
       },
       {
+        "command": "goPreview.openPreviewOnly",
+        "title": "Go Preview: Open as Preview Only",
+        "icon": "$(preview)"
+      },
+      {
         "command": "goPreview.togglePreview",
         "title": "Go Preview: Toggle Preview",
         "icon": "$(open-preview)"
@@ -44,10 +49,23 @@
         "when": "editorLangId == go && editorFocus"
       }
     ],
+    "customEditors": [
+      {
+        "viewType": "goPreview.previewOnly",
+        "displayName": "Go Pretty Preview",
+        "selector": [{ "filenamePattern": "*.go" }],
+        "priority": "option"
+      }
+    ],
     "menus": {
       "editor/title": [
         {
           "command": "goPreview.openPreview",
+          "when": "editorLangId == go",
+          "group": "navigation"
+        },
+        {
+          "command": "goPreview.openPreviewOnly",
           "when": "editorLangId == go",
           "group": "navigation"
         }

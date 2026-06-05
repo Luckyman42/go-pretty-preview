@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { GoPreviewProvider } from './GoPreviewProvider';
+import { GoPreviewCustomEditorProvider } from './GoPreviewCustomEditorProvider';
 
 export function activate(context: vscode.ExtensionContext): void {
   const provider = new GoPreviewProvider(context);
@@ -12,6 +13,15 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       provider.open(editor.document);
+    }),
+
+    vscode.commands.registerCommand('goPreview.openPreviewOnly', () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || editor.document.languageId !== 'go') {
+        vscode.window.showInformationMessage('Open a Go file to use Go Pretty Preview.');
+        return;
+      }
+      provider.openOnly(editor.document);
     }),
 
     vscode.commands.registerCommand('goPreview.togglePreview', () => {
@@ -42,6 +52,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       provider.handleActiveEditorChange(editor);
     }),
+
+    vscode.window.registerCustomEditorProvider(
+      GoPreviewCustomEditorProvider.viewType,
+      new GoPreviewCustomEditorProvider(context),
+      { webviewOptions: { retainContextWhenHidden: true } }
+    ),
 
     { dispose: () => provider.dispose() }
   );

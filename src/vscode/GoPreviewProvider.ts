@@ -1,25 +1,16 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { randomBytes } from 'crypto';
 import { Tree } from 'web-tree-sitter';
 import { runTransformers } from '../core/transformers/index';
-import { descriptorsFromSource, materialize, LineDescriptor, ColRange } from '../core/descriptors';
+import { descriptorsFromSource, materialize, LineDescriptor } from '../core/descriptors';
 import { buildPackageDecorations } from '../core/decorations/packageDecorations';
-import { Decoration } from '../core/decorations/types';
-import { createGoHighlighter, GoHighlighter } from '../core/highlighter';
-import { GO_HIGHLIGHTS_SCM } from '../core/goHighlights';
 import { ParserService } from './ParserService';
-
-let highlighterPromise: Promise<GoHighlighter> | null = null;
-
-function getHighlighter(parser: ParserService): Promise<GoHighlighter> {
-  if (!highlighterPromise) {
-    highlighterPromise = parser
-      .getLanguage()
-      .then((lang) => createGoHighlighter(lang, GO_HIGHLIGHTS_SCM));
-  }
-  return highlighterPromise;
-}
+import {
+  getHighlighter,
+  buildShell,
+  appendRangeDecorations,
+  sendDiagnostics,
+} from './previewUtils';
 
 export class GoPreviewProvider {
   private panel: vscode.WebviewPanel | undefined;
@@ -35,6 +26,8 @@ export class GoPreviewProvider {
   private scrollSyncDisposable: vscode.Disposable | undefined;
   // Prevents the source→preview and preview→source scroll events from chasing each other.
   private suppressScrollSync = false;
+  // True when the panel was opened in "preview only" mode (no source file visible).
+  private previewOnly = false;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     getHighlighter(ParserService.getInstance()).catch(() => {}); // trigger WASM + query early
@@ -54,11 +47,37 @@ export class GoPreviewProvider {
       this.updatePanel(document);
       return;
     }
+    this.previewOnly = false;
+    this.initPanel(document, vscode.ViewColumn.Beside);
+  }
 
+  openOnly(document: vscode.TextDocument): void {
+    if (this.panel) {
+      this.panel.reveal(vscode.ViewColumn.One);
+      this.updatePanel(document);
+      return;
+    }
+    this.previewOnly = true;
+    this.initPanel(document, vscode.ViewColumn.One);
+    // Close the source file tab so only the preview is visible, like "Open Preview" in Markdown.
+    for (const group of vscode.window.tabGroups.all) {
+      for (const tab of group.tabs) {
+        if (
+          tab.input instanceof vscode.TabInputText &&
+          tab.input.uri.toString() === document.uri.toString()
+        ) {
+          void vscode.window.tabGroups.close(tab);
+          break;
+        }
+      }
+    }
+  }
+
+  private initPanel(document: vscode.TextDocument, column: vscode.ViewColumn): void {
     const panel = vscode.window.createWebviewPanel(
       'goPreview',
       `Preview: ${path.basename(document.fileName)}`,
-      vscode.ViewColumn.Beside,
+      column,
       {
         enableScripts: true,
         localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')],
@@ -105,6 +124,9 @@ export class GoPreviewProvider {
 
   handleActiveEditorChange(editor: vscode.TextEditor | undefined): void {
     if (!editor || editor.document.languageId !== 'go') return;
+    // In preview-only mode the panel is locked to the file that was explicitly opened;
+    // don't follow the active editor to definition targets or other files.
+    if (this.previewOnly) return;
     const openByDefault = vscode.workspace
       .getConfiguration('goPreview')
       .get<boolean>('openByDefault', false);
@@ -158,32 +180,7 @@ export class GoPreviewProvider {
 
   private pushDiagnostics(document: vscode.TextDocument): void {
     if (!this.panel) return;
-    const rawDiags = vscode.languages.getDiagnostics(document.uri);
-
-    // Build inverse map: sourceLine → previewLine
-    const sourceToPreview = new Map<number, number>();
-    for (let previewLine = 0; previewLine < this.currentLineMap.length; previewLine++) {
-      const sourceLine = this.currentLineMap[previewLine];
-      if (!sourceToPreview.has(sourceLine)) {
-        sourceToPreview.set(sourceLine, previewLine);
-      }
-    }
-
-    const items = rawDiags.flatMap((d) => {
-      const previewLine = sourceToPreview.get(d.range.start.line);
-      if (previewLine === undefined) return [];
-      return [
-        {
-          line: previewLine,
-          startCol: d.range.start.character,
-          endCol: d.range.end.character,
-          severity: d.severity,
-          message: d.message,
-        },
-      ];
-    });
-
-    this.panel.webview.postMessage({ type: 'diagnostics', items });
+    sendDiagnostics(this.panel, document, this.currentLineMap);
   }
 
   private async handleWebviewMessage(msg: { type: string; [key: string]: unknown }): Promise<void> {
@@ -375,52 +372,7 @@ export class GoPreviewProvider {
   }
 
   private buildShell(webview: vscode.Webview): string {
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.context.extensionUri, 'media', 'preview.js')
-    );
-    const cssUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.context.extensionUri, 'media', 'preview.css')
-    );
-    const nonce = randomNonce();
-
-    return /* html */ `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="${cssUri}">
-  <title>Go Preview</title>
-</head>
-<body>
-  <div id="preview-container"></div>
-  <div id="hover-tooltip" style="display:none;position:fixed;z-index:9999;max-width:600px;padding:6px 10px;border-radius:4px;font-size:13px;pointer-events:none;overflow:auto;max-height:300px;"></div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
+    return buildShell(webview, this.context);
   }
 }
 
-function appendRangeDecorations(
-  decorations: Decoration[],
-  ranges: Array<ColRange[] | null>,
-  cssClass: string
-): void {
-  for (let i = 0; i < ranges.length; i++) {
-    const lineRanges = ranges[i];
-    if (!lineRanges) continue;
-    for (const r of lineRanges) {
-      decorations.push({
-        start: { line: i, character: r.start },
-        end: { line: i, character: r.end },
-        properties: { class: cssClass },
-        alwaysWrap: true,
-      });
-    }
-  }
-}
-
-function randomNonce(): string {
-  return randomBytes(16).toString('hex');
-}
