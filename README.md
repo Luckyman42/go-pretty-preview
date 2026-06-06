@@ -199,6 +199,7 @@ Open Settings (`Ctrl+,`) and search for **"Go Pretty Preview"**.
 
 ```bash
 npm install        # install dependencies
+npm test           # run unit tests
 npm run build      # one-shot build
 npm run watch      # rebuild on change
 # Press F5 in VS Code to launch the Extension Development Host
