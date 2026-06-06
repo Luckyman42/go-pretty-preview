@@ -5,7 +5,7 @@ Thanks for your interest! Contributions of all kinds are welcome — new preview
 ## Getting started
 
 ```bash
-git clone https://github.com/Luckyman42/go-pretty-preview.git
+git clone https://github.com/arpaad/go-pretty-preview.git
 cd go-pretty-preview
 npm install
 ```

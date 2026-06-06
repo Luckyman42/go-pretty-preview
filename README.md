@@ -1,8 +1,8 @@
 # Go Pretty Preview
 
-[![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue?logo=visualstudiocode)](https://github.com/Luckyman42/go-pretty-preview)
+[![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue?logo=visualstudiocode)](https://github.com/arpaad/go-pretty-preview)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![GitHub release](https://img.shields.io/github/v/release/Luckyman42/go-pretty-preview)](https://github.com/Luckyman42/go-pretty-preview/releases)
+[![GitHub release](https://img.shields.io/github/v/release/arpaad/go-pretty-preview)](https://github.com/arpaad/go-pretty-preview/releases)
 
 A VS Code extension that opens a **read-only rendered preview** of Go source files — like Markdown preview, but for Go.
 
@@ -137,7 +137,7 @@ Rendering uses **tree-sitter highlight queries** — the same parser that powers
 
 ### From a release (VSIX)
 
-1. Go to the [Releases page](https://github.com/Luckyman42/go-pretty-preview/releases)
+1. Go to the [Releases page](https://github.com/arpaad/go-pretty-preview/releases)
 2. Download the latest `.vsix` file
 3. In VS Code, open the Command Palette (`Ctrl+Shift+P`) and run **"Extensions: Install from VSIX..."**
 4. Select the downloaded file
@@ -151,7 +151,7 @@ code --install-extension go-pretty-preview-<version>.vsix
 ### Build from source
 
 ```bash
-git clone https://github.com/Luckyman42/go-pretty-preview.git
+git clone https://github.com/arpaad/go-pretty-preview.git
 cd go-pretty-preview
 npm install
 npm run build

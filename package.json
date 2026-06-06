@@ -3,16 +3,16 @@
   "displayName": "Go Pretty Preview",
   "description": "Read-only rendered preview for Go files with improved readability",
   "version": "0.1.0",
-  "publisher": "luckyman42",
+  "publisher": "arpaad",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Luckyman42/go-pretty-preview.git"
+    "url": "https://github.com/arpaad/go-pretty-preview.git"
   },
   "bugs": {
-    "url": "https://github.com/Luckyman42/go-pretty-preview/issues"
+    "url": "https://github.com/arpaad/go-pretty-preview/issues"
   },
-  "homepage": "https://github.com/Luckyman42/go-pretty-preview#readme",
+  "homepage": "https://github.com/arpaad/go-pretty-preview#readme",
   "engines": {
     "vscode": "^1.85.0"
   },
