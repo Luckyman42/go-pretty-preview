@@ -149,6 +149,7 @@
     "format": "prettier --write src",
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
+    "pretest": "node esbuild.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "vscode:prepublish": "npm run typecheck && node esbuild.js --production"
