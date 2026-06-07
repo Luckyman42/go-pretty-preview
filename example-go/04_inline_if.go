@@ -1,14 +1,14 @@
-// ─── Ajánlott VSCode beállítások ehhez a fájlhoz ────────────────────────────
+// ─── Suggested VS Code settings for this file ───────────────────────────────
 //
 //  "goPreview.openByDefault": true,
-//  "goPreview.rules.inlineOneLineIf": true   ← ez a default; próbáld false-ra is
+//  "goPreview.rules.inlineOneLineIf": true   ← this is the default; try false too
 //
-// Mit érdemes összehasonlítani:
-//  • inlineOneLineIf: true  → a preview összevon minden egysoros if-et egy sorba
-//  • inlineOneLineIf: false → a preview pontosan tükrözi a forrást
+// What to compare:
+//  • inlineOneLineIf: true  → the preview collapses every single-statement if
+//  • inlineOneLineIf: false → the preview mirrors the source exactly
 //
-// Ebben a fájlban szándékosan sok az egysoros if/else blokk, hogy
-// jól látható legyen a különbség a forrás és a preview között.
+// This file intentionally has many single-statement if/else blocks so the
+// difference between the source and the preview is clearly visible.
 // ─────────────────────────────────────────────────────────────────────────────
 
 package example

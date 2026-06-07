@@ -209,7 +209,7 @@ npm run lint          # eslint src
 # Press F5 in VS Code to launch the Extension Development Host
 ```
 
-> ⚠️ `npm run build` (esbuild) does **not** type-check. Always run `npm run typecheck` before considering a change done. There is currently no automated test suite — verify rules by hand in the Extension Development Host. If you add tests, wire them into `package.json` scripts and `.github/workflows/ci.yml`.
+> ⚠️ `npm run build` (esbuild) does **not** type-check. Always run `npm run typecheck` before considering a change done. Unit tests for core logic live in `src/__tests__/` and run with `npm test` (vitest). VS Code integration still requires manual verification in the Extension Development Host.
 
 ### Manual verification checklist for a rule change
 

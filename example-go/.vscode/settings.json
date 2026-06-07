@@ -1,0 +1,10 @@
+{
+  "goPreview.rules.inlineOneLineIf": true,
+  "goPreview.rules.previewRules": {
+    "protect":   [],
+    "highlight": ["\\blog\\.Fatal", "\\bpanic\\("],
+    "hide":      ["\\bslog\\.Debug\\b"],
+    "fade":      ["(\\bslog\\.)Info\\b"]
+  },
+  "goPreview.rules.fadePackages": ["fmt", "errors", "slog", "log"]
+}

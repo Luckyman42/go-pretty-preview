@@ -1,13 +1,13 @@
-// ─── Ajánlott VSCode beállítások ehhez a fájlhoz ────────────────────────────
+// ─── Suggested VS Code settings for this file ───────────────────────────────
 //
 //  "goPreview.openByDefault": true,
 //  "goPreview.rules.fadePackages": ["fmt", "sync", "context", "errors", "strings", "log"]
 //
-// Mit érdemes kipróbálni:
-//  • Kapcsold be a fadePackages-t a fenti listával → a preview-ban az összes
-//    "fmt.", "sync.", "context." stb. prefix elhalványodik.
-//  • Próbáld ki üres listával is [""] → minden prefix látszik → hasonlítsd össze.
-//  • A preview fókuszban tartja a logikát, nem a package neveket.
+// What to try:
+//  • Enable fadePackages with the list above → all "fmt.", "sync.", "context."
+//    prefixes dim in the preview, letting the function names stand out.
+//  • Try with an empty list [] → all prefixes visible → compare the difference.
+//  • The preview keeps focus on logic, not package names.
 // ─────────────────────────────────────────────────────────────────────────────
 
 package example

@@ -180,6 +180,20 @@ Alternatively, right-click a `.go` file in the Explorer → **Open With** → **
 
 Set `goPreview.openByDefault` to `true` to have the side-by-side preview open automatically whenever you focus a Go file.
 
+### Try the bundled examples
+
+The repository includes a ready-to-use [`example-go/`](example-go/) directory. Each file is annotated with the settings it demonstrates and what to try:
+
+| File | Demonstrates |
+|---|---|
+| `01_doc_comments.go` | Hover tooltip merging gopls docs + diagnostics |
+| `02_fade_packages.go` | `fadePackages` — dimming package qualifiers |
+| `03_preview_rules.go` | `previewRules` — protect / highlight / hide / fade |
+| `04_inline_if.go` | `inlineOneLineIf` — collapsing single-statement branches |
+| `05_navigation.go` | Ctrl+click (Go to Definition) and LSP quick fixes |
+
+Clone the repo, open the `example-go/` folder in VS Code, and press `Ctrl+K V` on any file to see the preview side by side.
+
 ---
 
 ## Settings

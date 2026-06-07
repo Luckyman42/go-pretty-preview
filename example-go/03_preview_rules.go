@@ -1,4 +1,4 @@
-// ─── Ajánlott VSCode beállítások ehhez a fájlhoz ────────────────────────────
+// ─── Suggested VS Code settings for this file ───────────────────────────────
 //
 //  "goPreview.openByDefault": true,
 //  "goPreview.rules.previewRules": {
@@ -8,13 +8,13 @@
 //    "fade":      ["(err != nil)", "(err)"]
 //  }
 //
-// Mit néz az extension (prioritás-sorrendben):
-//  1. protect  → a sor SOHA nem érinti más szabály (pl. panic sorai)
-//  2. highlight→ TODO/FIXME/HACK sorok kiemelve (capture group → csak az egyezik)
-//  3. hide     → nolint kommentek eltűnnek a preview-ból
-//  4. fade     → az "(err)" capture group elhalványodik, látszik de nem zavar
+// How the extension applies rules (in priority order):
+//  1. protect  → the line is NEVER touched by any other rule (e.g. panic lines)
+//  2. highlight→ TODO/FIXME/HACK lines highlighted (capture group → only the match)
+//  3. hide     → nolint comments disappear from the preview entirely
+//  4. fade     → the "(err)" capture group dims — still readable, not distracting
 //
-// Változtasd a mintákat és nézd, hogyan reagál a preview élőben.
+// Edit the patterns and watch the preview update live.
 // ─────────────────────────────────────────────────────────────────────────────
 
 package example
@@ -100,7 +100,7 @@ func safeRemove(path string) error {
 }
 
 // mustCreateTemp panics if a temp file cannot be created.
-// protect rule: a panic sorok mindig látszanak a preview-ban.
+// protect rule: panic lines are always visible in the preview.
 func mustCreateTemp(pattern string) *os.File {
 	f, err := os.CreateTemp("", pattern)
 	if err != nil {

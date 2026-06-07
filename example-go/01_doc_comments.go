@@ -1,16 +1,16 @@
-// ─── Ajánlott VSCode beállítások ehhez a fájlhoz ────────────────────────────
+// ─── Suggested VS Code settings for this file ───────────────────────────────
 //
-//  ".vscode/settings.json"-ba másolható blokk:
+//  Paste into ".vscode/settings.json":
 //
 //  "goPreview.openByDefault": true,
 //  "goPreview.rules.inlineOneLineIf": true,
 //  "goPreview.rules.fadePackages": ["math"]
 //
-// Mit érdemes kipróbálni:
-//  • Hover (egér / Ctrl+K Ctrl+I) bármelyik típus / függvény nevére
-//    → a preview hover tooltip egyesíti a gopls doksit + az extension infót.
-//  • A Calculator metódusai egysoros if-eket tartalmaznak: az inlineOneLineIf
-//    rule összevonja őket a preview-ban → hasonlítsd össze a forrással.
+// What to try:
+//  • Hover (mouse / Ctrl+K Ctrl+I) any type or function name
+//    → the preview tooltip merges gopls docs + extension info in one popup.
+//  • Calculator methods contain single-statement ifs: inlineOneLineIf
+//    collapses them in the preview → compare with the source editor.
 // ─────────────────────────────────────────────────────────────────────────────
 
 package example

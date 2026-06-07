@@ -1,5 +1,5 @@
 // Package example contains shared types used across multiple demo files.
-// Ctrl+Click bármelyik másik fájlban a típus nevére → ide ugrik.
+// Ctrl+Click any type name in other files → jumps here.
 package example
 
 import "time"
@@ -37,7 +37,7 @@ func (u *User) DisplayName() string {
 }
 
 // Storer defines the persistence contract for User objects.
-// Implementáld ezt az interface-t → gopls felajánlja a metódusokat (Ctrl+. / Quick Fix).
+// Implement this interface → gopls will offer "Add missing methods" (Ctrl+. / Quick Fix).
 type Storer interface {
 	Get(id int) (*User, error)
 	Save(u *User) error

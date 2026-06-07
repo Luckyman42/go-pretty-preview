@@ -1,19 +1,19 @@
-// ─── Ajánlott VSCode beállítások ehhez a fájlhoz ────────────────────────────
+// ─── Suggested VS Code settings for this file ───────────────────────────────
 //
 //  "goPreview.openByDefault": true,
 //  "goPreview.rules.fadePackages": ["fmt", "errors"],
 //  "goPreview.rules.inlineOneLineIf": true
 //
-// Ctrl+Click kipróbálása (Go to Definition):
-//  • "User"    → types.go:User struct
-//  • "Role"    → types.go:Role type + konstansok
-//  • "Storer"  → types.go:Storer interface
-//  • "Event"   → types.go:Event struct
+// Try Ctrl+Click (Go to Definition):
+//  • "User"    → types.go: User struct
+//  • "Role"    → types.go: Role type + constants
+//  • "Storer"  → types.go: Storer interface
+//  • "Event"   → types.go: Event struct
 //
-// LSP suggestion kipróbálása:
-//  • MemoryStore még nem implementálja az összes Storer metódust →
-//    gopls aláhúzza; állj rá és nyomj Ctrl+. → "Add missing methods" quick fix
-//  • Hover bármelyik típus / metódus nevére → gopls doc tooltip
+// Try LSP suggestions:
+//  • MemoryStore does not implement all Storer methods →
+//    gopls underlines it; hover and press Ctrl+. → "Add missing methods" quick fix
+//  • Hover any type or method name → gopls doc tooltip
 // ─────────────────────────────────────────────────────────────────────────────
 
 package example
@@ -93,7 +93,7 @@ func (m *MemoryStore) List() ([]*User, error) {
 }
 
 // UserService orchestrates user-related operations.
-// Ctrl+Click a "Storer"-re → types.go interface definíció
+// Ctrl+Click "Storer" → types.go interface definition
 type UserService struct {
 	store  Storer
 	events []Event
@@ -105,7 +105,7 @@ func NewUserService(store Storer) *UserService {
 }
 
 // CreateAdmin creates a new admin user and records an audit event.
-// Ctrl+Click a "User"-re vagy "RoleAdmin"-ra → types.go konstansok
+// Ctrl+Click "User" or "RoleAdmin" → types.go constants
 func (s *UserService) CreateAdmin(name, email string) (*User, error) {
 	u := &User{
 		Name:  name,
@@ -120,7 +120,7 @@ func (s *UserService) CreateAdmin(name, email string) (*User, error) {
 }
 
 // Promote upgrades a user's role to admin.
-// Ctrl+Click az "IsAdmin"-ra → types.go:User.IsAdmin metódus
+// Ctrl+Click "IsAdmin" → types.go: User.IsAdmin method
 func (s *UserService) Promote(id int) error {
 	u, err := s.store.Get(id)
 	if err != nil {
