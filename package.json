@@ -4,6 +4,14 @@
   "description": "Read-only rendered preview for Go files with improved readability",
   "version": "0.1.0",
   "publisher": "arpaad",
+  "icon": "media/icon.png",
+  "keywords": [
+    "go",
+    "golang",
+    "preview",
+    "readability",
+    "code review"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
