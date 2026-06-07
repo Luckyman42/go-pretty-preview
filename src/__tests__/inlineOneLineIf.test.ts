@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import path from 'path';
-import type { Tree } from 'web-tree-sitter';
 import { parseGo } from '../core/parser';
 import { descriptorsFromSource, type LineDescriptor } from '../core/descriptors';
 import { InlineOneLineIfTransformer } from '../core/transformers/inlineOneLineIf';
